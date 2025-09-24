@@ -1,0 +1,16 @@
+[package]
+name = "strata-protocol"
+version = "1.0.0"
+authors = []
+
+[addresses]
+marketplace="0x1"
+
+[dev-addresses]
+
+[dependencies.AptosFramework]
+git = "https://github.com/aptos-labs/aptos-framework.git"
+rev = "mainnet"
+subdir = "aptos-framework"
+
+[dev-dependencies]
