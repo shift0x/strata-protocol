@@ -5,9 +5,8 @@ module volatility_marketplace {
     use std::signer;
     use std::string;
     use std::table::{Self, Table};
-    use std::bcs;
     use aptos_framework::timestamp;
-    use marketplace::implied_volatility_market::{Self, VolatilityMarket};
+    use marketplace::implied_volatility_market::{Self};
 
     // Error codes
     const E_NOT_AUTHORIZED: u64 = 1;
@@ -41,9 +40,7 @@ module volatility_marketplace {
         };
         
         // Store resources
-        move_to(creator, marketplace);
-
-        return marketplace;
+        move_to(owner, marketplace);
     }
 
     // Create a new volatility market
