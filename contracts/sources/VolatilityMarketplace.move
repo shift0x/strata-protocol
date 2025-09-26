@@ -41,37 +41,6 @@ module volatility_marketplace {
         test_usdc_metadata: Object<Metadata>
     }
 
-    public fun swap(
-        user: &signer,
-        marketplace_address: address,
-        market_id: u64,
-        swap_type: u8,
-        amount_in: u64
-    ): u64 acquires Marketplace {
-        let marketplace = borrow_global<Marketplace>(marketplace_address);
-        assert!(table::contains(&marketplace.market_addresses, market_id), error::not_found(E_MARKET_NOT_FOUND));
-        
-        let market_address = *table::borrow(&marketplace.market_addresses, market_id);
-
-        implied_volatility_market::swap(user, market_address, swap_type, amount_in)
-    }
-
-    public fun get_swap_amount_out(
-        marketplace_address: address,
-        market_id: u64,
-        swap_type: u8,
-        amount_in: u64
-    ) : u64 acquires Marketplace {
-        let marketplace = borrow_global<Marketplace>(marketplace_address);
-        assert!(table::contains(&marketplace.market_addresses, market_id), error::not_found(E_MARKET_NOT_FOUND));
-        
-        let market_address = *table::borrow(&marketplace.market_addresses, market_id);
-
-        let amount_out = implied_volatility_market::get_swap_amount_out(market_address, swap_type, (amount_in as u256));
-
-        return (amount_out as u64)
-    }
-
     // Helper function to convert u64 to decimal string
     fun u64_to_string(value: u64): string::String {
         if (value == 0) {
@@ -148,7 +117,7 @@ module volatility_marketplace {
         initial_volatility: u256,
         expiration_timestamp: u64,
         marketplace_address: address
-    ): u64 acquires Marketplace {
+    ): (u64, address) acquires Marketplace {
         // Only marketplace owner can create markets
         let creator_addr = signer::address_of(creator);
         let marketplace = borrow_global_mut<Marketplace>(marketplace_address);
@@ -183,25 +152,7 @@ module volatility_marketplace {
         table::add(&mut marketplace.market_addresses, market_id, market_address);
         table::add(&mut marketplace.market_lookup, lookup_key, market_id);
         
-        market_id
-    }
-
-    // Settle a market (owner only) - delegates to individual market
-    public fun settle_market(
-        owner: &signer,
-        market_id: u64,
-        final_volatility: u256,
-        marketplace_address: address
-    ) acquires Marketplace {
-        let owner_addr = signer::address_of(owner);
-        let marketplace = borrow_global<Marketplace>(marketplace_address);
-        
-        assert!(marketplace.owner == owner_addr, error::permission_denied(E_NOT_AUTHORIZED));
-        assert!(table::contains(&marketplace.market_addresses, market_id), error::not_found(E_MARKET_NOT_FOUND));
-        
-        // Get market address and delegate to individual market module
-        let market_addr = *table::borrow(&marketplace.market_addresses, market_id);
-        implied_volatility_market::settle_market(owner, market_addr, final_volatility);
+        (market_id, market_address)
     }
 
     // Transfer marketplace ownership
@@ -219,21 +170,17 @@ module volatility_marketplace {
 
     // Mint TestUSDC tokens to the sender
     public fun mint_test_usdc(
-        sender: &signer,
         amount: u64,
+        to: address,
         marketplace_address: address
     ) acquires Marketplace {
         let marketplace = borrow_global<Marketplace>(marketplace_address);
-        let sender_addr = signer::address_of(sender);
-        
-        // Ensure primary store exists for the sender
-        // primary_fungible_store::ensure_primary_store_exists(sender_addr, marketplace.test_usdc_metadata);
         
         // Mint tokens using the mint ref
         let tokens = fungible_asset::mint(&marketplace.test_usdc_refs.mint_ref, amount);
         
         // Deposit tokens to the sender
-        primary_fungible_store::deposit(sender_addr, tokens);
+        primary_fungible_store::deposit(to, tokens);
     }
 
     // Get TestUSDC metadata for external use
@@ -241,19 +188,6 @@ module volatility_marketplace {
     public fun get_test_usdc_metadata(marketplace_address: address): Object<Metadata> acquires Marketplace {
         let marketplace = borrow_global<Marketplace>(marketplace_address);
         marketplace.test_usdc_metadata
-    }
-
-    #[view]
-    public fun get_iv_token_metadata(
-        marketplace_address: address,
-        market_id: u64
-    ) : Object<Metadata> acquires Marketplace {
-        let marketplace = borrow_global<Marketplace>(marketplace_address);
-        assert!(table::contains(&marketplace.market_addresses, market_id), error::not_found(E_MARKET_NOT_FOUND));
-        
-        let market_address = *table::borrow(&marketplace.market_addresses, market_id);
-
-        return implied_volatility_market::get_iv_token_metadata(market_address)
     }
 
     #[view]
