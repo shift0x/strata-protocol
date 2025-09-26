@@ -8,7 +8,7 @@ module implied_volatility_market {
     use std::string;
     use std::option;
     use aptos_framework::timestamp;
-    use aptos_framework::object::{Self, Object};
+    use aptos_framework::object::{Self, Object, ExtendRef};
     use aptos_framework::fungible_asset::{Self, Metadata, MintRef, BurnRef, TransferRef};
     use aptos_framework::primary_fungible_store::{Self};
 
@@ -17,11 +17,36 @@ module implied_volatility_market {
     const E_MARKET_ALREADY_SETTLED: u64 = 2;
     const E_MARKET_NOT_EXPIRED: u64 = 3;
 
+    // This holds the ExtendRef, which we need to get a signer for the object so we can transfer funds.
+    struct MarketRefs has key, store {
+        extend_ref: ExtendRef,
+    }
+
     // Capabilities for managing the IV token
     struct IVTokenRefs has store {
         mint_ref: MintRef,
         burn_ref: BurnRef,
         transfer_ref: TransferRef,
+    }
+
+    struct TokenReserves has store {
+        // pool balance of IV tokens
+        iv_token_reserves: u256,
+        // virtual balance of USDC tokens
+        virtual_usdc_token_reserves: u256
+    }
+
+    struct LiquidityPool has store {
+        // token address to IV token
+        iv_address: address,
+        // token address for USDC token
+        usdc_address: address,
+        // token management capabilities
+        iv_token_refs: IVTokenRefs,
+        // asset store USDC
+        usdc_store_address: address,
+        // pool reserves
+        reserves: TokenReserves
     }
 
     struct VolatilityMarket has key {
@@ -38,20 +63,9 @@ module implied_volatility_market {
         // boolean representing if the market has been settled
         settled: bool,
         // observed historical volatility at settlement
-        volatility: u64,
-        // amm responsible for trade activity
-        amm: AutomatedMarketMaker,
-        // metadata object for the IV token
-        iv_token_metadata: Object<Metadata>,
-        // token management capabilities
-        iv_token_refs: IVTokenRefs
-    }
-
-    struct AutomatedMarketMaker has store {
-        // pool balance of IV tokens
-        iv_token_reserves: u64,
-        // virtual balance of USDC tokens
-        virtual_usdc_token_reserves: u64
+        volatility: u256,
+        // liquidity pool responsible for managing token swaps
+        pool: LiquidityPool,
     }
 
     fun create_iv_token(
@@ -92,9 +106,10 @@ module implied_volatility_market {
         market_object_addr: address,
         creator_addr: address,
         asset_symbol: string::String,
-        initial_volatility: u64,
+        initial_volatility: u256,
         expiration_timestamp: u64,
         iv_token_metadata: Object<Metadata>,
+        usdc_address: address,
         iv_token_refs: IVTokenRefs
     ) : VolatilityMarket {
         let token_decimals = 1000000; // 6 decimals (10^6)
@@ -103,13 +118,29 @@ module implied_volatility_market {
         let initial_iv_supply = 1000000 * token_decimals; // 1 million tokens with 6 decimals
         let iv_tokens = fungible_asset::mint(&iv_token_refs.mint_ref, initial_iv_supply);
         
-        // Deposit tokens to the market object's primary store
+        // Create primary fungible stores for the vault
+        let usdc_metadata = object::address_to_object<Metadata>(usdc_address);
+        let usdc_token_store = primary_fungible_store::create_primary_store(market_object_addr, usdc_metadata);
+        
+        // Deposit initial IV tokens to the IV token store
         primary_fungible_store::deposit(market_object_addr, iv_tokens);
         
         // Calculate USDC reserves based on initial volatility, this creates an initial market
         // state where the future IV is equal to the current HV. The market can begin to discount
         // the future IV as it approaches expiration.
-        let virtual_usdc_reserves = initial_iv_supply * initial_volatility;
+        let virtual_usdc_reserves = (initial_iv_supply as u256) * initial_volatility;
+        
+        // Create vault with fungible stores
+        let pool = LiquidityPool {
+            iv_address: object::object_address(&iv_token_metadata),
+            usdc_address,
+            iv_token_refs,
+            usdc_store_address : object::object_address(&usdc_token_store),
+            reserves: TokenReserves {
+                iv_token_reserves: (initial_iv_supply as u256),
+                virtual_usdc_token_reserves: virtual_usdc_reserves
+            }
+        };
     
         let market = VolatilityMarket {
             owner: creator_addr,
@@ -119,12 +150,7 @@ module implied_volatility_market {
             asset_symbol,
             settled: false,
             volatility: initial_volatility,
-            amm: AutomatedMarketMaker {
-                iv_token_reserves: initial_iv_supply,
-                virtual_usdc_token_reserves: virtual_usdc_reserves
-            },
-            iv_token_metadata,
-            iv_token_refs,
+            pool
         };
     
         market
@@ -133,7 +159,8 @@ module implied_volatility_market {
     public fun init_volatility_market(
         creator: &signer,
         asset_symbol: string::String,
-        initial_volatility: u64,
+        usdc_address: address,
+        initial_volatility: u256,
         expiration_timestamp: u64 
     ) : address {
         let creator_addr = signer::address_of(creator);
@@ -141,6 +168,7 @@ module implied_volatility_market {
         // Create object to hold the market and its token balances
         let constructor_ref = object::create_object(creator_addr);
         let object_signer = object::generate_signer(&constructor_ref);
+        let extend_ref = object::generate_extend_ref(&constructor_ref);
         let object_addr = signer::address_of(&object_signer);
         
         // Create the IV token as a fungible asset
@@ -154,11 +182,13 @@ module implied_volatility_market {
             initial_volatility,
             expiration_timestamp,
             iv_token_metadata,
+            usdc_address,
             iv_token_refs
         );
         
         // Store the market in the object
         move_to(&object_signer, market);
+        move_to(&object_signer, MarketRefs { extend_ref });
         
         object_addr
     }
@@ -166,7 +196,7 @@ module implied_volatility_market {
     public fun settle_market(
         owner: &signer,
         market_addr: address,
-        final_volatility: u64
+        final_volatility: u256
     ) acquires VolatilityMarket {
         let owner_addr = signer::address_of(owner);
         let market = borrow_global_mut<VolatilityMarket>(market_addr);
@@ -180,7 +210,7 @@ module implied_volatility_market {
         market.settled_at_timestamp = timestamp::now_seconds();
     }
 
-    // Getter functions for testing and external access
+    // Getter functions for testing and external access 
     #[view]
     public fun get_owner(market_addr: address): address acquires VolatilityMarket {
         borrow_global<VolatilityMarket>(market_addr).owner
@@ -192,7 +222,7 @@ module implied_volatility_market {
     }
 
     #[view]
-    public fun get_volatility(market_addr: address): u64 acquires VolatilityMarket {
+    public fun get_volatility(market_addr: address): u256 acquires VolatilityMarket {
         borrow_global<VolatilityMarket>(market_addr).volatility
     }
 
@@ -207,14 +237,97 @@ module implied_volatility_market {
     }
 
     #[view]
-    public fun get_amm_reserves(market_addr: address): (u64, u64) acquires VolatilityMarket {
+    public fun get_amm_reserves(market_addr: address): (u256, u256) acquires VolatilityMarket {
         let market = borrow_global<VolatilityMarket>(market_addr);
-        (market.amm.iv_token_reserves, market.amm.virtual_usdc_token_reserves)
+        (market.pool.reserves.iv_token_reserves, market.pool.reserves.virtual_usdc_token_reserves)
     }
 
     #[view]
     public fun get_iv_token_metadata(market_addr: address): Object<Metadata> acquires VolatilityMarket {
-        borrow_global<VolatilityMarket>(market_addr).iv_token_metadata
+        let market = borrow_global<VolatilityMarket>(market_addr);
+        object::address_to_object<Metadata>(market.pool.iv_address)
+    }
+
+    // Calculate swap output amount using UniswapV2 constant product formula
+    // swap_type: 0 = buy IV tokens (USDC -> IV), 1 = sell IV tokens (IV -> USDC)  
+    #[view]
+    public fun get_swap_amount_out(
+        market_addr: address,
+        swap_type: u8,
+        amount_in: u256
+    ): u256 acquires VolatilityMarket {
+        let market = borrow_global<VolatilityMarket>(market_addr);
+        
+        return get_swap_amount_out_internal(swap_type, amount_in, market)
+    }
+
+    // internal method to get amount out given reserves
+    // avoids needing to acquire any global state
+    fun get_swap_amount_out_internal(
+        swap_type: u8,
+        amount_in: u256,
+        market: &VolatilityMarket
+    ): u256  {
+        let iv_reserves = market.pool.reserves.iv_token_reserves;
+        let usdc_reserves = market.pool.reserves.virtual_usdc_token_reserves;
+        
+        // Calculate output using constant product formula: x * y = k
+        // amount_out = (amount_in * reserve_out) / (reserve_in + amount_in)
+        if (swap_type == 0) {
+            return (amount_in * iv_reserves) / (usdc_reserves + amount_in)
+        } else {
+            return (amount_in * usdc_reserves) / (iv_reserves + amount_in)
+        }
+    }
+
+    /// Perform a swap on the volatility market
+    /// swap_type: 0 = buy IV tokens (USDC -> IV), 1 = sell IV tokens (IV -> USDC)
+    public fun swap(
+        user: &signer,
+        market_addr: address,
+        swap_type: u8,
+        amount_in: u64
+    ): u64 acquires VolatilityMarket, MarketRefs {
+        let market = borrow_global_mut<VolatilityMarket>(market_addr);
+        let user_addr = signer::address_of(user);
+        
+        // Calculate output amount
+        let amount_out = get_swap_amount_out_internal(swap_type, (amount_in as u256), market) as u64;
+        let usdc_metadata = object::address_to_object<Metadata>(market.pool.usdc_address);
+
+        if (swap_type == 0) {
+            // Buy IV tokens: User pays USDC, receives IV tokens
+            // Transfer USDC from user to market 
+            let usdc_tokens = primary_fungible_store::withdraw(user, usdc_metadata, amount_in);
+            primary_fungible_store::deposit(market_addr, usdc_tokens);
+            
+            // Transfer IV tokens from market to user
+            primary_fungible_store::transfer_with_ref(&market.pool.iv_token_refs.transfer_ref, market_addr, user_addr, amount_out);
+            
+            // Update reserves: increase USDC, decrease IV tokens
+            market.pool.reserves.virtual_usdc_token_reserves = market.pool.reserves.virtual_usdc_token_reserves + (amount_in as u256);
+            market.pool.reserves.iv_token_reserves = market.pool.reserves.iv_token_reserves - (amount_out as u256);
+            
+        } else {
+            // Sell IV tokens: User pays IV tokens, receives USDC
+            
+            // Transfer IV tokens from user to market
+            let iv_metadata = object::address_to_object<Metadata>(market.pool.iv_address);
+            let iv_tokens = primary_fungible_store::withdraw(user, iv_metadata, (amount_in as u64));
+            primary_fungible_store::deposit(market_addr, iv_tokens);
+            
+            // Transfer USDC from market to user (market owns the USDC, can withdraw directly)
+            let refs = borrow_global<MarketRefs>(market_addr);
+            let object_signer = object::generate_signer_for_extending(&refs.extend_ref);
+            let usdc_tokens = primary_fungible_store::withdraw(&object_signer, usdc_metadata, (amount_out as u64));
+            primary_fungible_store::deposit(user_addr, usdc_tokens);
+            
+            // Update reserves: decrease USDC, increase IV tokens
+            market.pool.reserves.virtual_usdc_token_reserves = market.pool.reserves.virtual_usdc_token_reserves - (amount_out as u256);
+            market.pool.reserves.iv_token_reserves = market.pool.reserves.iv_token_reserves + (amount_in as u256);
+        };
+        
+        amount_out
     }
 }
 }
