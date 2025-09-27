@@ -154,7 +154,8 @@ module volatility_marketplace {
             asset_symbol,
             usdc_address,
             initial_volatility,
-            expiration_timestamp
+            expiration_timestamp,
+            marketplace.staking_vault_address
         );
         
         // Store market address in tables

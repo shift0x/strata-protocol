@@ -14,6 +14,7 @@ module implied_volatility_market {
     use aptos_framework::fungible_asset::{Self, Metadata, MintRef, BurnRef, TransferRef};
     use aptos_framework::primary_fungible_store::{Self};
     use marketplace::isolated_margin_account::{Self, IsolatedMarginAccount};
+    use marketplace::staking_vault::{Self};
 
     // Error codes
     const E_NOT_AUTHORIZED: u64 = 1;
@@ -73,7 +74,11 @@ module implied_volatility_market {
         // margin accounts corresponding to users that have taken a short position
         margin_accounts: vector<address>,
         // isolated margin accounts
-        isolated_margin_accounts: Table<address, address>
+        isolated_margin_accounts: Table<address, address>,
+        // staking vault address
+        staking_vault_address: address,
+        // swap fee
+        swap_fee: u64,
     }
 
     fun create_iv_token(
@@ -121,7 +126,8 @@ module implied_volatility_market {
         expiration_timestamp: u64,
         iv_token_metadata: Object<Metadata>,
         usdc_address: address,
-        iv_token_refs: IVTokenRefs
+        iv_token_refs: IVTokenRefs,
+        staking_vault_address: address
     ) : VolatilityMarket {
         let token_decimals = 1000000; // 6 decimals (10^6)
 
@@ -164,7 +170,9 @@ module implied_volatility_market {
             volatility: initial_volatility,
             pool,
             isolated_margin_accounts: table::new(),
-            margin_accounts: vector[]
+            margin_accounts: vector[],
+            staking_vault_address,
+            swap_fee: 10000 // 1%
         };
     
         market
@@ -175,7 +183,8 @@ module implied_volatility_market {
         asset_symbol: string::String,
         usdc_address: address,
         initial_volatility: u256,
-        expiration_timestamp: u64 
+        expiration_timestamp: u64,
+        staking_vault_address: address
     ) : address {
         let creator_addr = signer::address_of(creator);
         
@@ -197,7 +206,8 @@ module implied_volatility_market {
             expiration_timestamp,
             iv_token_metadata,
             usdc_address,
-            iv_token_refs
+            iv_token_refs,
+            staking_vault_address
         );
         
         // Store the market in the object
@@ -269,7 +279,7 @@ module implied_volatility_market {
         market_addr: address,
         swap_type: u8,
         amount_in: u64
-    ): u64 acquires VolatilityMarket {
+    ): (u64, u64) acquires VolatilityMarket {
         let market = borrow_global<VolatilityMarket>(market_addr);
         
         return get_swap_amount_out_internal(swap_type, amount_in , market)
@@ -303,20 +313,26 @@ module implied_volatility_market {
         swap_type: u8,
         amount_in: u64,
         market: &VolatilityMarket
-    ): u64  {
+    ): (u64, u64)  {
         let iv_reserves = market.pool.reserves.iv_token_reserves;
         let usdc_reserves = market.pool.reserves.virtual_usdc_token_reserves;
         let amount_in_big = amount_in as u256;
         
         // Calculate output using constant product formula: x * y = k
         // amount_out = (amount_in * reserve_out) / (reserve_in + amount_in)
-        let amount_out = if (swap_type == 0) {
-            (amount_in_big * iv_reserves) / (usdc_reserves + amount_in_big)
-        } else {
-            (amount_in_big * usdc_reserves) / (iv_reserves + amount_in_big)
-        };
+        if (swap_type == 0) {
+            let swap_fees = (amount_in * market.swap_fee) / 1000000;
+            let amount_in_with_fees = amount_in_big - (swap_fees as u256);
+            let amount_out = (amount_in_with_fees * iv_reserves) / (usdc_reserves + amount_in_with_fees);
 
-        amount_out as u64
+            (amount_out as u64, swap_fees as u64)
+        } else {
+            let amount_out_before_fees = ((amount_in_big * usdc_reserves) / (iv_reserves + amount_in_big)) as u64;
+            let swap_fees = (amount_out_before_fees * market.swap_fee) / 1000000;
+            let amount_out = amount_out_before_fees - swap_fees;
+
+            (amount_out as u64, swap_fees as u64)
+        }
     }
 
     /// Perform a swap on the volatility market
@@ -329,15 +345,22 @@ module implied_volatility_market {
     ): u64 acquires VolatilityMarket, MarketRefs {
         let market = borrow_global_mut<VolatilityMarket>(market_addr);
         let user_addr = signer::address_of(user);
-        
-        // Calculate output amount
-        let amount_out = get_swap_amount_out_internal(swap_type, amount_in, market);
         let usdc_metadata = object::address_to_object<Metadata>(market.pool.usdc_address);
 
+        let (amount_out, swap_fees) = get_swap_amount_out_internal(swap_type, amount_in, market);
+        
         if (swap_type == 0) {
+            // transfer swap fees to the staking pool
+            let swap_fee_tokens = primary_fungible_store::withdraw(user, usdc_metadata, swap_fees);
+            primary_fungible_store::deposit(market.staking_vault_address, swap_fee_tokens);
+
+            // notify the staking vault of the swap fee earnings
+            staking_vault::swap_fees_collected(market.staking_vault_address, swap_fees);
+
             // Buy IV tokens: User pays USDC, receives IV tokens
             // Transfer USDC from user to market 
-            let usdc_tokens = primary_fungible_store::withdraw(user, usdc_metadata, amount_in);
+            
+            let usdc_tokens = primary_fungible_store::withdraw(user, usdc_metadata, amount_in - swap_fees);
             primary_fungible_store::deposit(market_addr, usdc_tokens);
             
             // Transfer IV tokens from market to user
@@ -346,6 +369,8 @@ module implied_volatility_market {
             // Update reserves: increase USDC, decrease IV tokens
             market.pool.reserves.virtual_usdc_token_reserves = market.pool.reserves.virtual_usdc_token_reserves + (amount_in as u256);
             market.pool.reserves.iv_token_reserves = market.pool.reserves.iv_token_reserves - (amount_out as u256);
+
+            amount_out
         } else {
             // Sell IV tokens: User pays IV tokens, receives USDC
             
@@ -353,19 +378,28 @@ module implied_volatility_market {
             let iv_metadata = object::address_to_object<Metadata>(market.pool.iv_address);
             let iv_tokens = primary_fungible_store::withdraw(user, iv_metadata, amount_in);
             primary_fungible_store::deposit(market_addr, iv_tokens);
-            
-            // Transfer USDC from market to user (market owns the USDC, can withdraw directly)
+
+            // setup object signer to transfer tokens from pool to user and staking vault (fees)
             let refs = borrow_global<MarketRefs>(market_addr);
             let object_signer = object::generate_signer_for_extending(&refs.extend_ref);
+
+            // transfer swap fees to the staking pool
+            let swap_fee_tokens = primary_fungible_store::withdraw(&object_signer, usdc_metadata, swap_fees);
+            primary_fungible_store::deposit(market.staking_vault_address, swap_fee_tokens);
+
+            // notify the staking vault of the swap fee earnings
+            staking_vault::swap_fees_collected(market.staking_vault_address, swap_fees);
+            
+            // Transfer USDC from market to user (market owns the USDC, can withdraw directly)
             let usdc_tokens = primary_fungible_store::withdraw(&object_signer, usdc_metadata, amount_out);
             primary_fungible_store::deposit(user_addr, usdc_tokens);
             
             // Update reserves: decrease USDC, increase IV tokens
-            market.pool.reserves.virtual_usdc_token_reserves = market.pool.reserves.virtual_usdc_token_reserves - (amount_out as u256);
+            market.pool.reserves.virtual_usdc_token_reserves = market.pool.reserves.virtual_usdc_token_reserves - (amount_out + swap_fees as u256);
             market.pool.reserves.iv_token_reserves = market.pool.reserves.iv_token_reserves + (amount_in as u256);
-        };
-        
-        amount_out
+
+            amount_out
+        }
     }
 
     // Opens a new short position for the given user by creating a new isolated margin account
@@ -383,29 +417,35 @@ module implied_volatility_market {
         let market = borrow_global_mut<VolatilityMarket>(market_addr);
         let user_addr = signer::address_of(user);
 
-        // Ensure the market has enough liquidity to handle the short position
-        // borrow usdc liquidity from the staking pool to facilitate the swap
-        // this will not alter the quote of the pool, but it will increase the USDC
-        // available to facilitate the margin sell. 
-        // This balance will be repaid when the user closes the position.
-        let quote = get_quote_internal(market);
-        let iv_token_amount = (usdc_collateral_amount * 1000000) / quote;
-
         // ensure the user has a margin account
         let margin_account_address = ensure_margin_account_exists(market, user_addr);
+        let margin_account_signer = isolated_margin_account::get_signer(margin_account_address);
 
         // transfer the usdc collateral amount to the margin account
         let usdc_metadata = object::address_to_object<Metadata>(market.pool.usdc_address);
         let usdc_tokens = primary_fungible_store::withdraw(user, usdc_metadata, usdc_collateral_amount);
         primary_fungible_store::deposit(margin_account_address, usdc_tokens);
-
+        
         // mint and iv tokens to margin account (borrow)
+        let quote = get_quote_internal(market);
+        let iv_token_amount = (usdc_collateral_amount * 1000000) / quote;
         let iv_tokens = fungible_asset::mint(&market.pool.iv_token_refs.mint_ref, iv_token_amount);
         
         primary_fungible_store::deposit(margin_account_address, iv_tokens);
 
+        // Ensure the market has enough liquidity to handle the short position
+        // borrow usdc liquidity from the staking pool to facilitate the swap
+        // this will not alter the quote of the pool, but it will increase the USDC
+        // available to facilitate the margin sell. 
+        // This balance will be repaid when the user closes the position.
+        staking_vault::borrow_on_margin(
+            &margin_account_signer,
+            market_addr,
+            market.staking_vault_address,
+            usdc_collateral_amount
+        );
+
         // Sell the tokens from the margin account
-        let margin_account_signer = isolated_margin_account::get_signer(margin_account_address);
         swap(&margin_account_signer, market_addr, 1, iv_token_amount);
 
         // update the margin account balances

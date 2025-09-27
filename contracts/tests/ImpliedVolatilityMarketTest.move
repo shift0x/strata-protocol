@@ -10,6 +10,7 @@ module marketplace::implied_volatility_market_test {
     use marketplace::implied_volatility_market;
     use marketplace::volatility_marketplace;
     use marketplace::isolated_margin_account;
+    use marketplace::staking_vault;
 
     #[test(creator = @0x123, framework = @aptos_framework)]
     fun test_init_volatility_market_creates_pool_correctly(creator: signer, framework: signer) {
@@ -30,12 +31,14 @@ module marketplace::implied_volatility_market_test {
         let expiration_timestamp = timestamp::now_seconds() + 86400; // 1 day from now
         
         // Initialize the market
+        let vault_address = volatility_marketplace::get_staking_vault_address(marketplace_addr);
         let market_addr = implied_volatility_market::init_volatility_market(
             &creator,
             asset_symbol,
             usdc_address,
             initial_volatility,
-            expiration_timestamp
+            expiration_timestamp,
+            vault_address
         );
         
         // Verify market was created
@@ -79,7 +82,7 @@ module marketplace::implied_volatility_market_test {
         let asset_symbol = string::utf8(b"BTC");
         let initial_volatility = 25; // 25 USDC per IV token
         let expiration_timestamp = timestamp::now_seconds() + 86400;
-        
+
         let (market_id, market_address) = volatility_marketplace::create_market(
             &creator,
             asset_symbol,
@@ -105,7 +108,7 @@ module marketplace::implied_volatility_market_test {
 
         // determine the expected output amount
         let usdc_input = 1000000; // 1 USDC
-        let expected_amount_out = implied_volatility_market::get_swap_amount_out(
+        let (expected_amount_out, expected_fee) = implied_volatility_market::get_swap_amount_out(
             market_address,
             0, // swap_type: USDC -> IV
             usdc_input
@@ -125,18 +128,18 @@ module marketplace::implied_volatility_market_test {
 
         assert!(final_usdc_balance == initial_usdc_balance - usdc_input, 3);
         assert!(final_iv_balance == expected_amount_out, 4);
-        assert!(final_pool_usdc_balance == usdc_input, 5);
+        assert!(final_pool_usdc_balance == usdc_input - expected_fee, 5);
         
         // Test swap: Sell IV tokens for USDC (swap_type = 1)
         let iv_input = (final_iv_balance / 2) as u64; // Sell half the IV tokens
-        let expected_usdc_output = implied_volatility_market::get_swap_amount_out(
+        let (expected_usdc_output, expected_fee) = implied_volatility_market::get_swap_amount_out(
             market_address,
             1, // swap_type: IV -> USDC
             iv_input
         );
 
         let expected_trader_usdc_balance = expected_usdc_output + final_usdc_balance;
-        let expected_pool_usdc_balance = final_pool_usdc_balance - expected_usdc_output;
+        let expected_pool_usdc_balance = final_pool_usdc_balance - expected_usdc_output - expected_fee;
         
         implied_volatility_market::swap(
             &trader,
@@ -183,14 +186,23 @@ module marketplace::implied_volatility_market_test {
         assert!(quote == expected_quote, 1);
     }
 
-    #[test(creator = @0x123, trader = @0x456, framework = @aptos_framework)]
-    fun test_open_short_position(creator: signer, trader: signer, framework: signer) {
+    #[test(creator = @0x123, trader = @0x456, staker = @0x789, framework = @aptos_framework)]
+    fun test_open_short_position(creator: signer, trader: signer, staker: signer, framework: signer) {
         // Setup test environment
         timestamp::set_time_has_started_for_testing(&framework);
 
         // Create marketplace
         volatility_marketplace::create_marketplace(&creator);
         let marketplace_addr = signer::address_of(&creator);
+
+        // Mint test tokens to the staker signer
+        let staking_amount = 100000 * 1000000; // 100K USDC
+        let staker_address = signer::address_of(&staker);
+        volatility_marketplace::mint_test_usdc(staking_amount, staker_address, marketplace_addr);
+
+        // Stake tokens to faciliate borrows
+        let vault_address = volatility_marketplace::get_staking_vault_address(marketplace_addr);
+        staking_vault::stake(&staker, vault_address, staking_amount);
         
         // Create a volatility market
         let asset_symbol = string::utf8(b"BTC");
@@ -242,6 +254,6 @@ module marketplace::implied_volatility_market_test {
         assert!(actual_iv_units_borrowed == expected_iv_units_borrowed, 3);
     }
 
-    
+
 
 }

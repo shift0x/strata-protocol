@@ -13,11 +13,14 @@ module staking_vault {
     use aptos_framework::fungible_asset::{Self, Metadata, MintRef, BurnRef, TransferRef};
     use aptos_framework::primary_fungible_store::{Self};
     use marketplace::volatility_marketplace::{Self};
+    use marketplace::implied_volatility_market::{Self};
 
     // Error codes
     const E_INSUFFICIENT_BALANCE: u64 = 1;
+    const E_BORROW_OVER_CAP: u64 = 2;
 
     friend marketplace::volatility_marketplace;
+    friend marketplace::implied_volatility_market;
 
     struct AccountRefs has key {
         extend_ref: object::ExtendRef
@@ -37,7 +40,9 @@ module staking_vault {
         // the amount of lending fees earned by the staking pool
         lending_fees_earned: u64,
         // the maximum percentage of staked balances can be borrowed from the vault
-        max_borrow_percentage: u64
+        max_borrow_percentage: u64,
+        // the fee changed for borrowing funds from the vault
+        borrow_fee: u64,
     }
 
     // creates a new vault object that holds tokens and vault structs
@@ -62,7 +67,8 @@ module staking_vault {
             staking_balances: table::new(),
             swap_fees_earned: 0,
             lending_fees_earned: 0,
-            max_borrow_percentage
+            max_borrow_percentage,
+            borrow_fee: 40000 // 4%
         };
 
         // Store the vault in the object
@@ -70,6 +76,47 @@ module staking_vault {
         move_to(&object_signer, AccountRefs { extend_ref });
 
         object_addr
+    }
+
+    public(friend) fun borrow_on_margin(
+        borrow_margin_account: &signer,
+        liquidity_pool_address: address,
+        vault_address: address,
+        amount: u64
+    ) acquires Vault, AccountRefs {
+        // ensure the requested borrow amount is less than the max borrow
+        let max_borrow_amount = get_maximum_borrow_amount(vault_address);
+        assert!(amount <= max_borrow_amount, error::aborted(E_BORROW_OVER_CAP));
+
+        // get the vault and signer
+        let vault = borrow_global_mut<Vault>(vault_address);
+        let vault_signer = get_signer(vault_address);
+
+        // send the requested borrow amount
+        let usdc_metadata = object::address_to_object<Metadata>(vault.usdc_address);
+        let usdc_tokens = primary_fungible_store::withdraw(&vault_signer, usdc_metadata, amount);
+        primary_fungible_store::deposit(liquidity_pool_address, usdc_tokens);    
+
+        // extract borrow fees
+        let borrow_fee = (vault.borrow_fee * amount) / 1000000;
+        let borrow_usdc_tokens = primary_fungible_store::withdraw(borrow_margin_account, usdc_metadata, borrow_fee);
+        primary_fungible_store::deposit(vault_address, borrow_usdc_tokens);
+
+        // update the staked balance to reflect the collected transaction fees
+        vault.usdc_staked_amount = vault.usdc_staked_amount + borrow_fee;
+
+        // update the transaction fees collected from the borrow
+        vault.lending_fees_earned = vault.lending_fees_earned + borrow_fee;
+    }
+
+    public(friend) fun swap_fees_collected(
+        vault_address: address,
+        amount: u64
+    ) acquires Vault {
+        let vault = borrow_global_mut<Vault>(vault_address);
+
+        vault.swap_fees_earned = vault.swap_fees_earned + amount;
+        vault.usdc_staked_amount = vault.usdc_staked_amount + amount;
     }
 
     // stake the amount of user tokens with the vault
@@ -107,25 +154,26 @@ module staking_vault {
     ) acquires Vault, AccountRefs {
         let vault = borrow_global_mut<Vault>(vault_address);
         let owner_addr = signer::address_of(owner);
-        let factor = 1000000; //10^6
-
+        
         // ensure the user has a balance
         assert!(table::contains(&vault.staking_balances, owner_addr), error::not_found(E_INSUFFICIENT_BALANCE));
         
-        // ensure the user balance is greater than or equal to the requested unstake amount
-        let current_balance = table::borrow_mut(&mut vault.staking_balances, owner_addr);
-        assert!(*current_balance >= amount, error::not_found(E_INSUFFICIENT_BALANCE));
+        // calculate amount to transfer
+        let amount_to_transfer = get_unstake_amount_internal(vault, owner_addr, amount);
+
+        // get current balance to check if sufficient
+        let current_balance_value = *table::borrow(&vault.staking_balances, owner_addr);
+        assert!(current_balance_value >= amount, error::not_found(E_INSUFFICIENT_BALANCE));
 
         // transfer tokens back to the user in proportion to their stake
         let usdc_metadata = object::address_to_object<Metadata>(vault.usdc_address);
-        let staked_percentage = (amount * factor) / vault.usdc_staked_amount;
-        let amount_to_transfer = (vault.usdc_staked_amount * staked_percentage) / factor;
         let vault_signer = get_signer(vault_address);
 
         let usdc_tokens = primary_fungible_store::withdraw(&vault_signer, usdc_metadata, amount_to_transfer);
         primary_fungible_store::deposit(owner_addr, usdc_tokens);    
 
         // update the users current balance
+        let current_balance = table::borrow_mut(&mut vault.staking_balances, owner_addr);
         *current_balance = *current_balance - amount;
 
         // updated the vault staked amount
@@ -147,6 +195,33 @@ module staking_vault {
         } else {
             *table::borrow(&vault.staking_balances, user_address)
         }
+    }
+
+    #[view]
+    public fun get_unstake_amount(
+        vault_address: address,
+        user_address: address,
+        amount: u64
+    ) : u64 acquires Vault {
+        let vault = borrow_global<Vault>(vault_address);
+        
+        get_unstake_amount_internal(vault, user_address, amount)
+    }
+
+    fun get_unstake_amount_internal(
+        vault: &Vault,
+        user_address: address,
+        amount: u64
+    ) : u64  {
+        if(!table::contains(&vault.staking_balances, user_address)) {
+            0
+        } else {
+            let factor = 1000000; //10^6
+            let staked_percentage = (amount * factor) / vault.usdc_staked_amount;
+            
+            (vault.usdc_staked_amount * staked_percentage) / factor
+        }
+        
     }
 
     // the vault has a limit on the amount of USDC that can be borrowed at any given time
