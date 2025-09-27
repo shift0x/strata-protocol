@@ -15,6 +15,9 @@ module implied_volatility_market {
     use aptos_framework::primary_fungible_store::{Self};
     use marketplace::isolated_margin_account::{Self, IsolatedMarginAccount};
     use marketplace::staking_vault::{Self};
+    use marketplace::volatility_marketplace::{Self};
+
+    friend marketplace::volatility_marketplace;
 
     // Error codes
     const E_NOT_AUTHORIZED: u64 = 1;
@@ -178,7 +181,7 @@ module implied_volatility_market {
         market
     }
 
-    public fun init_volatility_market(
+    public(friend) fun init_volatility_market(
         creator: &signer,
         asset_symbol: string::String,
         usdc_address: address,
@@ -217,7 +220,7 @@ module implied_volatility_market {
         object_addr
     }
 
-    public fun settle_market(
+    public(friend) fun settle_market(
         owner: &signer,
         market_addr: address,
         final_volatility: u256

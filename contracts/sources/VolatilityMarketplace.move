@@ -5,7 +5,7 @@ module volatility_marketplace {
     use std::signer;
     use std::string;
     use std::option;
-    use std::vector;
+    use std::vector::{Self};
     use std::table::{Self, Table};
     use aptos_framework::timestamp;
     use aptos_framework::object::{Self, Object};
@@ -34,8 +34,10 @@ module volatility_marketplace {
         market_counter: u64,
         // Table storing market addresses by ID
         market_addresses: Table<u64, address>,
-        // Table for quick lookup by asset symbol and expiration  
+        // Table for quick lookup by market key(symbol+expiration)
         market_lookup: Table<string::String, u64>,
+        // Table for all active markets for a given asset
+        active_markets_by_asset: Table<string::String, vector<address>>,
         // TestUSDC token management capabilities
         test_usdc_refs: TestUSDCRefs,
         // TestUSDC token metadata
@@ -82,6 +84,7 @@ module volatility_marketplace {
             market_counter: 0,
             market_addresses: table::new(),
             market_lookup: table::new(),
+            active_markets_by_asset: table::new(),
             test_usdc_refs,
             test_usdc_metadata,
             staking_vault_address: vault_address
@@ -162,8 +165,41 @@ module volatility_marketplace {
         table::add(&mut marketplace.market_addresses, market_id, market_address);
         table::add(&mut marketplace.market_lookup, lookup_key, market_id);
         
+        // Add market address to active markets by asset
+        if (table::contains(&marketplace.active_markets_by_asset, asset_symbol)) {
+            let markets_vector = table::borrow_mut(&mut marketplace.active_markets_by_asset, asset_symbol);
+            vector::push_back(markets_vector, market_address);
+        } else {
+            let new_markets_vector = vector::empty<address>();
+            vector::push_back(&mut new_markets_vector, market_address);
+            table::add(&mut marketplace.active_markets_by_asset, asset_symbol, new_markets_vector);
+        };
+        
         (market_id, market_address)
     }
+
+    // Settle the given market at the given historical volatility price
+    public fun settle_market(
+        owner: &signer,
+        marketplace_address: address,
+        market_id: u64,
+        historical_volatility: u256
+    ) acquires Marketplace {
+        let marketplace = borrow_global_mut<Marketplace>(marketplace_address);
+        let market_address = *table::borrow(&marketplace.market_addresses, market_id);
+        
+        implied_volatility_market::settle_market(owner, market_address, historical_volatility);
+
+        // remove the market from active markets by asset
+        let asset_symbol = implied_volatility_market::get_asset_symbol(market_address);
+        let markets_vector = table::borrow_mut(&mut marketplace.active_markets_by_asset, asset_symbol);
+        let (exists, item_index) = vector::index_of(markets_vector, &market_address);
+        
+        if(exists) {
+            vector::remove(markets_vector, item_index);
+        }
+    }
+
 
     // Transfer marketplace ownership
     public fun transfer_ownership(
@@ -218,6 +254,33 @@ module volatility_marketplace {
     ) : address acquires Marketplace {
         let marketplace = borrow_global<Marketplace>(marketplace_address);
         return marketplace.staking_vault_address
+    }
+
+    #[view]
+    public fun get_implied_volatility(
+        marketplace_address: address,
+        asset_symbol: string::String
+    ) : u256 acquires Marketplace {
+        let marketplace = borrow_global<Marketplace>(marketplace_address);
+        assert!(table::contains(&marketplace.active_markets_by_asset, asset_symbol), error::not_found(E_MARKET_NOT_FOUND));
+        
+        let markets_vector = table::borrow(&marketplace.active_markets_by_asset, asset_symbol);
+        let num_markets = vector::length(markets_vector);
+        
+        assert!(num_markets > 0, error::not_found(E_MARKET_NOT_FOUND));
+        
+        let total_volatility = 0u256;
+        let i = 0;
+        
+        while (i < num_markets) {
+            let market_address = *vector::borrow(markets_vector, i);
+            let market_volatility = implied_volatility_market::get_volatility(market_address);
+            total_volatility = total_volatility + market_volatility;
+            i = i + 1;
+        };
+        
+        // Calculate average volatility
+        total_volatility / (num_markets as u256)
     }
 }
 }

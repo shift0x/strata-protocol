@@ -32,17 +32,13 @@ module marketplace::implied_volatility_market_test {
         
         // Initialize the market
         let vault_address = volatility_marketplace::get_staking_vault_address(marketplace_addr);
-        let market_addr = implied_volatility_market::init_volatility_market(
+        let (market_id, market_addr) = volatility_marketplace::create_market(
             &creator,
             asset_symbol,
-            usdc_address,
             initial_volatility,
             expiration_timestamp,
-            vault_address
+            marketplace_addr
         );
-        
-        // Verify market was created
-        assert!(market_addr != @0x0, 1);
         
         // Verify market metadata
         assert!(implied_volatility_market::get_owner(market_addr) == signer::address_of(&creator), 2);
