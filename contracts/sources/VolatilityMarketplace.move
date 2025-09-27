@@ -12,6 +12,7 @@ module volatility_marketplace {
     use aptos_framework::fungible_asset::{Self, Metadata, MintRef, TransferRef};
     use aptos_framework::primary_fungible_store::{Self};
     use marketplace::implied_volatility_market::{Self};
+    use marketplace::staking_vault::{Self};
 
     // Error codes
     const E_NOT_AUTHORIZED: u64 = 1;
@@ -38,7 +39,9 @@ module volatility_marketplace {
         // TestUSDC token management capabilities
         test_usdc_refs: TestUSDCRefs,
         // TestUSDC token metadata
-        test_usdc_metadata: Object<Metadata>
+        test_usdc_metadata: Object<Metadata>,
+        // Staking vault address
+        staking_vault_address: address
     }
 
     // Helper function to convert u64 to decimal string
@@ -67,7 +70,12 @@ module volatility_marketplace {
         
         // Create TestUSDC token
         let (test_usdc_refs, test_usdc_metadata) = create_test_usdc_token(owner);
+        let usdc_address = object::object_address(&test_usdc_metadata);
         
+        // Create a new staking vault
+        let max_borrow_percentage = 100000; // 10%
+        let vault_address = staking_vault::create_vault(owner, usdc_address, max_borrow_percentage);
+
         // Create the new marketplace
         let marketplace = Marketplace {
             owner: creator_addr,
@@ -75,9 +83,10 @@ module volatility_marketplace {
             market_addresses: table::new(),
             market_lookup: table::new(),
             test_usdc_refs,
-            test_usdc_metadata
+            test_usdc_metadata,
+            staking_vault_address: vault_address
         };
-        
+
         // Store resources
         move_to(owner, marketplace);
     }
@@ -200,6 +209,14 @@ module volatility_marketplace {
         
         let market_address = *table::borrow(&marketplace.market_addresses, market_id);
         return market_address
+    }
+
+    #[view]
+    public fun get_staking_vault_address(
+        marketplace_address: address
+    ) : address acquires Marketplace {
+        let marketplace = borrow_global<Marketplace>(marketplace_address);
+        return marketplace.staking_vault_address
     }
 }
 }

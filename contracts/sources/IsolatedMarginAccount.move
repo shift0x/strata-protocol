@@ -1,3 +1,5 @@
+// margin accounts are isolated per market and user. This mitigates bad debt risk and
+// enables efficent partial liquidiation of user margin accounts when needeed.
 module marketplace::isolated_margin_account {
     use std::signer::{Self};
     use aptos_framework::object::{Self, Object, ExtendRef};
