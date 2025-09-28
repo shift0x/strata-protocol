@@ -6,7 +6,7 @@ function Home() {
     <main className="main-content">
       <div className="hero-section">
         <h1 className="hero-title">
-          On-chain option market<br />
+          On-chain option<br />
           <span className="hero-title-secondary">money legos</span>
         </h1>
         <p className="hero-subtitle">
