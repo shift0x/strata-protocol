@@ -1,485 +1,99 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-
+/* Reset and base styles */
 * {
-  margin: 0;
-  padding: 0;
   box-sizing: border-box;
 }
 
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-  min-height: 100vh;
-  font-size: 16px;
-  line-height: 1.6;
-  color: #334155;
-}
-
 .App {
+  text-align: left;
+  background-color: #0a0a0a;
   min-height: 100vh;
 }
 
-/* Navigation */
-.navbar {
-  background: rgba(255, 255, 255, 0.97);
-  backdrop-filter: blur(20px);
-  padding: 0.75rem 0;
-  position: fixed;
-  top: 0;
-  width: 100%;
-  z-index: 1000;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-weight: 500;
+  line-height: 1.2;
 }
 
-.nav-container {
+/* Layout */
+.main-content {
+  padding: 2rem;
   max-width: 1200px;
   margin: 0 auto;
+}
+
+/* Navbar Styles */
+.navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background-color: rgba(10, 10, 10, 0.95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.navbar-content {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 2rem;
-  height: 40px;
+  padding: 1rem 3rem;
 }
 
-.nav-menu {
+.navbar-logo {
   display: flex;
-  list-style: none;
-  gap: 2rem;
+  align-items: center;
 }
 
-.nav-link {
-  text-decoration: none;
-  color: #475569;
-  font-weight: 500;
-  font-size: 15px;
-  letter-spacing: -0.01em;
-  transition: all 0.2s ease;
-  position: relative;
+.logo-image {
+  height: 30px;
+  width: auto;
 }
 
-.nav-link:hover {
-  color: #3b82f6;
-}
-
-.nav-link.active {
-  color: #1e293b;
-  font-weight: 600;
-}
-
-.nav-link.active::after {
-  content: '';
-  position: absolute;
-  bottom: -8px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, #3b82f6, #1d4ed8);
-  border-radius: 1px;
-}
-
-.connect-btn {
-  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-  color: white;
-  border: none;
-  padding: 0.875rem 1.75rem;
-  border-radius: 10px;
-  font-weight: 600;
-  font-size: 14px;
-  letter-spacing: -0.01em;
+.enter-app-btn {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  color: #ffffff;
+  padding: 0.5rem 0.875rem;
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  font-weight: 300;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+  letter-spacing: 0;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
 }
 
-.connect-btn:hover {
-  background: linear-gradient(135deg, #2563eb, #1e40af);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.25);
+.enter-app-btn:hover {
+  background: #2a2a2a;
+  border-color: #3a3a3a;
 }
 
-/* Main Content */
+/* Adjust main content for fixed navbar */
 .main-content {
-  margin-top: 70px;
-  padding: 3rem 2rem;
+  padding: 2rem;
   max-width: 1200px;
-  margin-left: auto;
-  margin-right: auto;
+  margin: 0 auto;
+  padding-top: 6rem;
 }
 
-/* Hero Section */
-.hero-section {
-  text-align: center;
-  padding: 3rem 0 4rem 0;
-}
-
-.hero-title {
-  font-size: 5rem;
-  font-weight: 800;
-  color: #0f172a;
-  margin-bottom: 1.25rem;
-  line-height: 1.05;
-  letter-spacing: -0.025em;
-}
-
-.hero-subtitle {
-  font-size: 1.5rem;
-  color: #64748b;
-  margin-bottom: 1.5rem;
-  line-height: 1.6;
-  max-width: 800px;
-  margin-left: auto;
-  margin-right: auto;
-  font-weight: 400;
-}
-
-.btn-primary {
-  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-  color: white;
-  border: none;
-  padding: 0.875rem 2.25rem;
-  border-radius: 25px;
-  font-size: 1.1rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  cursor: pointer;
-  transition: all 0.25s ease;
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.25);
-}
-
-.text-sm {
-  font-size: .85rem;
-}
-
-.get-started-btn:hover {
-  background: linear-gradient(135deg, #2563eb, #1e40af);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.35);
-}
-
-/* Features Section */
-.features-section {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 400px));
-  gap: 2.5rem;
-  margin-top: .5rem;
-  justify-content: center;
-}
-
-.feature-card {
-  position: relative;
-  background: white;
-  border-radius: 20px;
-  overflow: hidden;
-  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.08);
-  transition: all 0.4s ease;
-}
-
-.feature-card:hover {
-  transform: translateY(-6px);
-  box-shadow: 0 16px 48px rgba(15, 23, 42, 0.15);
-}
-
-.feature-background {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 55px;
-  overflow: hidden;
-}
-
-.feature-pattern {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  opacity: 0.08;
-}
-
-.liquidity-card .feature-background {
-  background: linear-gradient(135deg, #e0f2fe, #b3e5fc);
-}
-
-.liquidity-card .feature-pattern {
-  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%233b82f6' fill-opacity='0.15'%3E%3Ccircle cx='30' cy='30' r='4'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-}
-
-.traders-card .feature-background {
-  background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
-}
-
-.traders-card .feature-pattern {
-  background-image: url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%236366f1' fill-opacity='0.12' fill-rule='evenodd'%3E%3Cpath d='m0 40l40-40h-40v40z'/%3E%3C/g%3E%3C/svg%3E");
-}
-
-.feature-content {
-  position: relative;
-  z-index: 2;
-  padding: 2.5rem 2rem 2rem 2rem;
-  padding-top: .9rem;
-}
-
-.feature-icon {
-  position: absolute;
-  top: -28px;
-  left: 2rem;
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-  z-index: 3;
-}
-
-.liquidity-icon {
-  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-}
-
-.traders-icon {
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
-}
-
-.feature-badge {
-  display: inline-block;
-  padding: 0.375rem 0.875rem;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 1rem;
-}
-
-.liquidity-card .feature-badge {
-  background: rgba(59, 130, 246, 0.1);
-  color: #1d4ed8;
-}
-
-.traders-card .feature-badge {
-  background: rgba(99, 102, 241, 0.1);
-  color: #4f46e5;
-}
-
-.feature-title {
-  font-size: 1.375rem;
-  font-weight: 700;
-  color: #0f172a;
-  margin-bottom: 1rem;
-  margin-top: .5rem;
-  line-height: 1.3;
-  letter-spacing: -0.01em;
-}
-
-.feature-description {
-  color: #64748b;
-  font-size: 0.95rem;
-  line-height: 1.6;
-  font-weight: 400;
-  margin-bottom: 1.5rem;
-}
-
-.feature-benefits {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-bottom: 2rem;
-}
-
-.benefit-item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  font-size: 0.875rem;
-  color: #475569;
-  font-weight: 500;
-}
-
-.benefit-icon {
-  font-size: 1rem;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  background: rgba(148, 163, 184, 0.1);
-}
-
-.feature-cta {
-  width: 100%;
-  padding: 0.875rem 1.5rem;
-  border: none;
-  border-radius: 12px;
-  font-weight: 600;
-  font-size: 0.925rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  letter-spacing: -0.01em;
-}
-
-.liquidity-cta {
-  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-  color: white;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
-}
-
-.liquidity-cta:hover {
-  background: linear-gradient(135deg, #2563eb, #1e40af);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.35);
-}
-
-.traders-cta {
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
-  color: white;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
-}
-
-.traders-cta:hover {
-  background: linear-gradient(135deg, #5b21b6, #4c1d95);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.35);
-}
-
-/* Responsive Design */
+/* Responsive design */
 @media (max-width: 768px) {
-  .nav-container {
-    padding: 0 1.5rem;
-  }
-  
-  .navbar {
-    padding: 1rem 0;
-  }
-  
-  .nav-menu {
-    gap: 1.5rem;
+  .navbar-content {
+    padding: 1rem;
   }
   
   .main-content {
-    margin-top: 70px;
-    padding: 4rem 1.5rem;
+    padding: 1rem;
+    padding-top: 5rem;
   }
   
-  .hero-section {
-    padding: 3rem 0 5rem 0;
-  }
-  
-  .hero-title {
-    font-size: 3.5rem;
-    margin-bottom: 1.5rem;
-    line-height: 1.1;
-  }
-  
-  .hero-subtitle {
-    font-size: 1.25rem;
-    margin-bottom: 3rem;
-  }
-  
-  .get-started-btn {
-    padding: 1rem 2.5rem;
-    font-size: 1.1rem;
-  }
-  
-  .features-section {
-    grid-template-columns: 1fr;
-    gap: 2rem;
-    margin-top: .5rem;
-  }
-  
-  .feature-card {
-    border-radius: 16px;
-  }
-  
-  .feature-content {
-    padding: 2rem 1.5rem 1.5rem 1.5rem;
-    padding-top: 4rem;
-  }
-  
-  .feature-icon {
-    width: 48px;
-    height: 48px;
-    top: -20px;
-    left: 1.5rem;
-  }
-  
-  .feature-title {
-    font-size: 1.25rem;
-  }
-  
-  .feature-description {
-    font-size: 0.9rem;
-    margin-bottom: 1.25rem;
-  }
-  
-  .feature-benefits {
-    margin-bottom: 1.5rem;
-  }
-}
 
-@media (max-width: 480px) {
-  .nav-container {
-    padding: 0 1rem;
-  }
   
-  .nav-menu {
-    display: none;
-  }
-  
-  .main-content {
-    padding: 3rem 1rem;
-  }
-  
-  .hero-section {
-    padding: 2rem 0 4rem 0;
-  }
-  
-  .hero-title {
-    font-size: 2.75rem;
-    line-height: 1.15;
-  }
-  
-  .hero-subtitle {
-    font-size: 1.125rem;
-  }
-  
-  .get-started-btn {
-    padding: 1rem 2rem;
-    font-size: 1rem;
-  }
-  
-  .feature-content {
-    padding: 1.75rem 1.25rem 1.25rem 1.25rem;
-    padding-top: 3.5rem;
-  }
-  
-  .feature-icon {
-    width: 44px;
-    height: 44px;
-    top: -18px;
-    left: 1.25rem;
-  }
-  
-  .feature-title {
-    font-size: 1.125rem;
-  }
-  
-  .feature-description {
-    font-size: 0.85rem;
-  }
-  
-  .benefit-item {
-    font-size: 0.8rem;
-  }
-  
-  .benefit-icon {
-    width: 20px;
-    height: 20px;
-    font-size: 0.875rem;
+  .enter-app-btn {
+    font-size: 0.8125rem;
+    padding: 0.4rem 0.8rem;
   }
 }

@@ -1,0 +1,226 @@
+/* Homepage Hero Styles */
+.hero-title {
+  font-size: clamp(3rem, 8vw, 6rem);
+  font-weight: 400;
+  color: #ffffff;
+  line-height: 1.1;
+  margin-bottom: 1.5rem;
+  letter-spacing: -0.02em;
+}
+
+.hero-title-secondary {
+  color: #888888;
+}
+
+.hero-subtitle {
+  font-size: 1.125rem;
+  color: #a0a0a0;
+  line-height: 1.6;
+  margin-bottom: 2rem;
+  max-width: 750px;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+}
+
+.hero-section {
+  padding: 4rem 0 6rem;
+}
+
+/* Hero CTA Styles */
+.hero-cta {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.cta-primary {
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #ffffff;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.cta-primary:hover {
+  background: #f0f0f0;
+  border-color: #f0f0f0;
+}
+
+.cta-secondary {
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.cta-secondary:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* Featured Container - Two Column Layout */
+.featured-container {
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 4rem;
+  align-items: flex-start;
+}
+
+/* Featured Section Styles */
+.featured-section {
+  background: rgba(18, 18, 18, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 2.5rem;
+  flex: 2;
+  min-height: 280px;
+}
+
+.featured-badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #888888;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 1rem;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+}
+
+.featured-title {
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: #ffffff;
+  margin-bottom: 0.75rem;
+  margin-top: 0;
+  line-height: 1.3;
+}
+
+.featured-description {
+  font-size: 0.9rem;
+  color: #a0a0a0;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Stats Panel Styles */
+.stats-panel {
+  background: #f8f8f8;
+  border-radius: 8px;
+  padding: 2rem 1.5rem;
+  flex: 1;
+  min-width: 240px;
+  text-align: left;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.stats-badge {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #666666;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 1rem;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+}
+
+.stats-number {
+  font-size: 3rem;
+  font-weight: 600;
+  color: #000000;
+  line-height: 1;
+  margin-bottom: 0.25rem;
+}
+
+.stats-label {
+  font-size: 0.85rem;
+  color: #888888;
+  margin-bottom: 2rem;
+}
+
+.stats-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: #666666;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+}
+
+.indicator-dot {
+  width: 6px;
+  height: 6px;
+  background: green;
+  border-radius: 50%;
+}
+
+/* Modules Container - Two Column Layout */
+.modules-container {
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 4rem;
+  align-items: flex-start;
+}
+
+/* Module Section Styles */
+.module-section {
+  background: rgba(18, 18, 18, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 2.5rem;
+  flex: 1;
+  min-height: 200px;
+}
+
+/* Homepage Responsive Design */
+@media (max-width: 768px) {
+  .hero-section {
+    padding: 2rem 0 4rem;
+  }
+  
+  .hero-title {
+    font-size: 2.5rem;
+  }
+  
+  .hero-subtitle {
+    font-size: 1rem;
+  }
+  
+  .featured-container {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .stats-panel {
+    min-width: auto;
+  }
+  
+  .modules-container {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .hero-cta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  
+  .cta-primary,
+  .cta-secondary {
+    width: 100%;
+    text-align: center;
+  }
+}
