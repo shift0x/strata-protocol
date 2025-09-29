@@ -79,8 +79,8 @@ module staking_vault {
     }
 
     public(friend) fun cover_insufficent_usdc_balance(
-        liquidity_pool_address: address,
         vault_address: address,
+        liquidity_pool_address: address,
         amount: u64
     ) acquires Vault, AccountRefs {
         // get the vault and signer
@@ -258,9 +258,13 @@ module staking_vault {
         vault_address: address
     ): u64 acquires Vault {
         let vault = borrow_global<Vault>(vault_address);
-        let factor = 1000000; //10^6
+        let factor = 1000000 as u256; //10^6
 
-        (vault.usdc_staked_amount * vault.max_borrow_percentage) / factor
+        let usdc_staked_amount_big = vault.usdc_staked_amount as u256;
+        let max_borrow_percentage_big = vault.max_borrow_percentage as u256;
+        let max_borrow = (usdc_staked_amount_big * max_borrow_percentage_big) / factor;
+
+        max_borrow as u64
     }
     
     fun get_signer(

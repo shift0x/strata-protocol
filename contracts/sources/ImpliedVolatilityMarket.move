@@ -320,7 +320,7 @@ module implied_volatility_market {
     ) {
         let i: u64 = 0;
         let len = vector::length(&market.margin_accounts);
-        
+
         while (i < len) {
             let user_with_short_position = *vector::borrow(&market.margin_accounts, i);
             let margin_account_address = *table::borrow(&market.isolated_margin_accounts, user_with_short_position);
@@ -329,7 +329,7 @@ module implied_volatility_market {
             // determine the required input amount to receive the desired output amount
             let iv_units_borrowed = isolated_margin_account::get_iv_units_borrowed(&margin_account);
             let amount_in = get_swap_amount_in_internal(0, iv_units_borrowed, market);
-    
+
             // transfer the input amount in USDC tokens to the vault
             // we don't need to manually buy the IV tokens back, then sell from the vault since
             // the price at this point is fixed. We can shortcut by calculating the USDC input
@@ -346,6 +346,8 @@ module implied_volatility_market {
 
             // record the closing of the borrow
             isolated_margin_account::close_borrow(margin_account_address);
+
+            i = i + 1;
         }
     }
 
@@ -559,6 +561,17 @@ module implied_volatility_market {
         swap_fees: u64
     ) : u64 acquires MarketRefs {
         let usdc_metadata = object::address_to_object<Metadata>(market.pool.usdc_address);
+        let required_usdc_balance = amount_out + swap_fees;
+
+        // Ensure the market has enough USDC to tranfer (The vault covers any market shortfalls)
+        let market_usdc_balance = primary_fungible_store::balance(market_address, usdc_metadata);
+
+        if(market_usdc_balance < required_usdc_balance) {
+            staking_vault::cover_insufficent_usdc_balance(
+                market.staking_vault_address, 
+                market_address, 
+                required_usdc_balance);
+        };
         
         // Transfer IV tokens from user to market
         let iv_metadata = object::address_to_object<Metadata>(market.pool.iv_address);
@@ -579,22 +592,19 @@ module implied_volatility_market {
         // notify the staking vault of the swap fee earnings
         staking_vault::swap_fees_collected(market.staking_vault_address, swap_fees);
 
-        // Ensure the market has enough USDC to tranfer (The vault covers any market shortfalls)
-        let market_usdc_balance = primary_fungible_store::balance(market_address, usdc_metadata);
-
-        if(market_usdc_balance < amount_out) {
-            staking_vault::cover_insufficent_usdc_balance(
-                market.staking_vault_address, 
-                market_address, 
-                amount_out);
-        };
-        
         // Transfer USDC from market to user (market owns the USDC, can withdraw directly)
         let usdc_tokens = primary_fungible_store::withdraw(&object_signer, usdc_metadata, amount_out);
         primary_fungible_store::deposit(user_address, usdc_tokens);
         
         // Update reserves: decrease USDC, increase IV tokens
-        market.pool.reserves.virtual_usdc_token_reserves = market.pool.reserves.virtual_usdc_token_reserves - (amount_out + swap_fees as u256);
+        let virtual_reserves_adjustment = (amount_out + swap_fees as u256);
+
+        if(virtual_reserves_adjustment > market.pool.reserves.virtual_usdc_token_reserves){
+            market.pool.reserves.virtual_usdc_token_reserves = 0;
+        } else {
+            market.pool.reserves.virtual_usdc_token_reserves = market.pool.reserves.virtual_usdc_token_reserves - virtual_reserves_adjustment;
+        };
+
         market.pool.reserves.iv_token_reserves = market.pool.reserves.iv_token_reserves + (amount_in as u256);
 
         amount_out
@@ -739,6 +749,7 @@ module implied_volatility_market {
         } else {
             let margin_account_address = isolated_margin_account::new(user_address);
 
+            vector::push_back(&mut market.margin_accounts, user_address);
             table::add(&mut market.isolated_margin_accounts, user_address, margin_account_address);
             
             margin_account_address
