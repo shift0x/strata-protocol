@@ -27,7 +27,7 @@ module marketplace::implied_volatility_market_test {
         
         // Test parameters
         let asset_symbol = string::utf8(b"BTC");
-        let initial_volatility = 25; // 25 USDC per IV token
+        let initial_volatility = 25 * 1000000; // 25 USDC per IV token
         let expiration_timestamp = timestamp::now_seconds() + 86400; // 1 day from now
         
         // Initialize the market
@@ -43,14 +43,14 @@ module marketplace::implied_volatility_market_test {
         // Verify market metadata
         assert!(implied_volatility_market::get_owner(market_addr) == signer::address_of(&creator), 2);
         assert!(implied_volatility_market::get_asset_symbol(market_addr) == asset_symbol, 3);
-        assert!(implied_volatility_market::get_volatility(market_addr) == initial_volatility, 4);
+        assert!(implied_volatility_market::get_quote(market_addr) == (initial_volatility as u64), 4);
         assert!(implied_volatility_market::get_expiration(market_addr) == expiration_timestamp, 5);
         assert!(!implied_volatility_market::is_settled(market_addr), 6);
         
         // Verify AMM reserves
         let (iv_reserves, usdc_reserves) = implied_volatility_market::get_amm_reserves(market_addr);
         let expected_iv_supply = 1000000 * 1000000; // 1M tokens with 6 decimals
-        let expected_usdc_reserves = expected_iv_supply * initial_volatility; // 25M USDC equivalent
+        let expected_usdc_reserves = (expected_iv_supply * initial_volatility) / 1000000; // 25M USDC equivalent
         
         assert!(iv_reserves == expected_iv_supply, 7);
         assert!(usdc_reserves == expected_usdc_reserves, 8);
@@ -59,10 +59,6 @@ module marketplace::implied_volatility_market_test {
         let iv_token_metadata = implied_volatility_market::get_iv_token_metadata(market_addr);
         let market_iv_balance = primary_fungible_store::balance(market_addr, iv_token_metadata);
         assert!((market_iv_balance as u256) == expected_iv_supply, 9);
-        
-        // Verify price ratio (25 USDC per 1 IV token)
-        let price_ratio = usdc_reserves / iv_reserves; // Both have same decimals (6)
-        assert!(price_ratio == initial_volatility, 10); // Should equal 25
     }
 
     #[test(creator = @0x123, trader = @0x456, framework = @aptos_framework)]
@@ -163,7 +159,7 @@ module marketplace::implied_volatility_market_test {
         
         // Create a volatility market
         let asset_symbol = string::utf8(b"ETH");
-        let initial_volatility = 30; 
+        let initial_volatility = 30 * 1000000; 
         let expiration_timestamp = timestamp::now_seconds() + 86400;
         
         let (market_id, market_address) = volatility_marketplace::create_market(
@@ -175,9 +171,8 @@ module marketplace::implied_volatility_market_test {
         );
 
         // Test get_quote
-        let factor = 1000000; // 10^6
         let quote = implied_volatility_market::get_quote(market_address);
-        let expected_quote = (initial_volatility as u64) * factor;
+        let expected_quote = (initial_volatility as u64);
 
         assert!(quote == expected_quote, 1);
     }

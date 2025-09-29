@@ -70,6 +70,13 @@ module marketplace::isolated_margin_account {
         margin_account.collateral = margin_account.collateral + collateral_amount;
     }
 
+    public(friend) fun close_borrow(account_address: address) acquires IsolatedMarginAccount {
+        let margin_account = borrow_global_mut<IsolatedMarginAccount>(account_address);
+
+        margin_account.iv_units_borrowed = 0;
+        margin_account.collateral = 0;
+    }
+
     public(friend) fun get_signer(
         margin_account_address: address
     ) : signer acquires AccountRefs {

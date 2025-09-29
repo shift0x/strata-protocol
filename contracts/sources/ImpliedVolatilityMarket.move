@@ -71,7 +71,7 @@ module implied_volatility_market {
         // boolean representing if the market has been settled
         settled: bool,
         // observed historical volatility at settlement
-        volatility: u256,
+        settlement_price: u64,
         // liquidity pool responsible for managing token swaps
         pool: LiquidityPool,
         // margin accounts corresponding to users that have taken a short position
@@ -82,6 +82,8 @@ module implied_volatility_market {
         staking_vault_address: address,
         // swap fee
         swap_fee: u64,
+        // token balances of each user address
+        token_holders: vector<address>
     }
 
     fun create_iv_token(
@@ -148,7 +150,7 @@ module implied_volatility_market {
         // Calculate USDC reserves based on initial volatility, this creates an initial market
         // state where the future IV is equal to the current HV. The market can begin to discount
         // the future IV as it approaches expiration.
-        let virtual_usdc_reserves = (initial_iv_supply as u256) * initial_volatility;
+        let virtual_usdc_reserves = ((initial_iv_supply as u256) * initial_volatility) / (token_decimals as u256);
         
         // Create the liquidity pool and assign reseve balances
         let pool = LiquidityPool {
@@ -170,12 +172,13 @@ module implied_volatility_market {
             expiration_timestamp,
             asset_symbol,
             settled: false,
-            volatility: initial_volatility,
+            settlement_price: 0,
             pool,
             isolated_margin_accounts: table::new(),
             margin_accounts: vector[],
             staking_vault_address,
-            swap_fee: 10000 // 1%
+            swap_fee: 10000, // 1%
+            token_holders: vector[]
         };
     
         market
@@ -220,21 +223,130 @@ module implied_volatility_market {
         object_addr
     }
 
+    // settles an implied volatility market at expiration. Currently this method takes 
+    // the settlement price, but the final price should be calculated by the market itself. 
+    // This can be acheived when AIP 125 (Scheduled Transactions) is implemented
+    // The process of settling a market involves closing all short positions and paying
+    // out the long positions at the settlement price. 
     public(friend) fun settle_market(
         owner: &signer,
-        market_addr: address,
-        final_volatility: u256
-    ) acquires VolatilityMarket {
+        market_address: address,
+        settlement_price: u64
+    ) acquires VolatilityMarket, MarketRefs {
         let owner_addr = signer::address_of(owner);
-        let market = borrow_global_mut<VolatilityMarket>(market_addr);
+        let market = borrow_global_mut<VolatilityMarket>(market_address);
         
         assert!(market.owner == owner_addr, error::permission_denied(E_NOT_AUTHORIZED));
         assert!(market.settled == false, error::invalid_argument(E_MARKET_ALREADY_SETTLED));
         assert!(market.expiration_timestamp < timestamp::now_seconds(), error::invalid_argument(E_MARKET_NOT_EXPIRED));
         
-        market.volatility = final_volatility;
+        // Update the market with settlement information
         market.settled = true;
+        market.settlement_price = settlement_price;
         market.settled_at_timestamp = timestamp::now_seconds();
+
+        // close short positions
+        close_short_positions(market);
+
+        // payout long positions at settlement price
+        close_long_positions(market, market_address);
+
+        // Transfer excess USDC to staking vault -- this represents the profit the vault
+        // earned from taking the other side of trades. For example, a trader that bought
+        // IV at 15, but it settled at 10. The process would only need to payout $10 and
+        // the vault earned 5 USDC from the trade.
+        let usdc_metadata = object::address_to_object<Metadata>(market.pool.usdc_address);
+        let market_usdc_balance = primary_fungible_store::balance(market_address, usdc_metadata);
+
+        if(market_usdc_balance > 0) {
+            // setup object signer to transfer tokens from pool to user and staking vault (fees)
+            let refs = borrow_global<MarketRefs>(market_address);
+            let object_signer = object::generate_signer_for_extending(&refs.extend_ref);
+
+            // Transfer USDC from market to vault
+            let usdc_tokens = primary_fungible_store::withdraw(&object_signer, usdc_metadata, market_usdc_balance);
+            primary_fungible_store::deposit(market.staking_vault_address, usdc_tokens);
+
+            // Record the profit in the staking vault
+            staking_vault::volatility_market_profit(market.staking_vault_address, market_usdc_balance);
+        }
+    }
+
+    // Close the long positions that have been opened at the settlement price
+    fun close_long_positions(
+        market: &mut VolatilityMarket,
+        market_address: address
+    ) acquires MarketRefs {
+        let i: u64 = 0;
+        let len = vector::length(&market.token_holders);
+        let iv_token_metadata = object::address_to_object<Metadata>(market.pool.iv_address);
+        let usdc_metadata = object::address_to_object<Metadata>(market.pool.usdc_address);
+        
+        // close long positions for all token holders if they are still
+        // holding tokens
+        while (i < len) {
+            let token_holder = *vector::borrow(&market.token_holders, i);
+            let token_balance = primary_fungible_store::balance(token_holder, iv_token_metadata);
+            
+            // get the swap output amount and complete the swap in the pool
+            // the market should already be closed at this point, so we should be using the 
+            // settlement price
+            if(token_balance > 0){
+                let (amount_out, swap_fee) = get_swap_amount_out_internal(1, token_balance, market);
+
+                // use the internal sell_to_close method instead of running though the swap
+                // method which requires the user signer object
+                sell_to_close_internal(
+                    token_holder,
+                    market,
+                    market_address,
+                    token_balance,
+                    amount_out,
+                    swap_fee
+                );
+
+            };
+
+            i = i + 1;
+        }
+    }
+
+    // Close the open short positions at the specified price
+    // 1. Buy back IV tokens at the settlement price
+    // 2. Repay the loaned USDC to the Vault
+    // 3. Transfer the remaining USDC back to the owner
+    fun close_short_positions(
+        market: &mut VolatilityMarket
+    ) {
+        let i: u64 = 0;
+        let len = vector::length(&market.margin_accounts);
+        
+        while (i < len) {
+            let user_with_short_position = *vector::borrow(&market.margin_accounts, i);
+            let margin_account_address = *table::borrow(&market.isolated_margin_accounts, user_with_short_position);
+            let margin_account = isolated_margin_account::get_margin_account_state(margin_account_address);
+
+            // determine the required input amount to receive the desired output amount
+            let iv_units_borrowed = isolated_margin_account::get_iv_units_borrowed(&margin_account);
+            let amount_in = get_swap_amount_in_internal(0, iv_units_borrowed, market);
+    
+            // transfer the input amount in USDC tokens to the vault
+            // we don't need to manually buy the IV tokens back, then sell from the vault since
+            // the price at this point is fixed. We can shortcut by calculating the USDC input
+            // and transferring it directly to the vault.
+            let usdc_metadata = object::address_to_object<Metadata>(market.pool.usdc_address);
+            let margin_account_signer = isolated_margin_account::get_signer(margin_account_address);
+            let usdc_tokens = primary_fungible_store::withdraw(&margin_account_signer, usdc_metadata, amount_in);
+            primary_fungible_store::deposit(market.staking_vault_address, usdc_tokens);
+
+            // transfer the remaining USDC from the margin account back to the user
+            // this amount represents their profit or loss on the position
+            let remaining_usdc = primary_fungible_store::balance(margin_account_address, usdc_metadata);
+            primary_fungible_store::transfer(&margin_account_signer, usdc_metadata, user_with_short_position, remaining_usdc);
+
+            // record the closing of the borrow
+            isolated_margin_account::close_borrow(margin_account_address);
+        }
     }
 
     // Getter functions for testing and external access 
@@ -249,8 +361,8 @@ module implied_volatility_market {
     }
 
     #[view]
-    public fun get_volatility(market_addr: address): u256 acquires VolatilityMarket {
-        borrow_global<VolatilityMarket>(market_addr).volatility
+    public fun get_settlement_price(market_addr: address): u64 acquires VolatilityMarket {
+        borrow_global<VolatilityMarket>(market_addr).settlement_price
     }
 
     #[view]
@@ -288,6 +400,19 @@ module implied_volatility_market {
         return get_swap_amount_out_internal(swap_type, amount_in , market)
     }
 
+    // Calculate required input amount for a desired output amount
+    // swap_type: 0 = buy IV tokens (USDC -> IV), 1 = sell IV tokens (IV -> USDC)  
+    #[view]
+    public fun get_swap_amount_in(
+        market_addr: address,
+        swap_type: u8,
+        amount_out: u64
+    ): u64 acquires VolatilityMarket {
+        let market = borrow_global<VolatilityMarket>(market_addr);
+        
+        return get_swap_amount_in_internal(swap_type, amount_out, market)
+    }
+
     // get the quote for the current market
     // acquires VolatilityMarket
     #[view]
@@ -310,6 +435,48 @@ module implied_volatility_market {
         (quoteBig as u64)
     }
 
+    fun get_swap_amounts_for_settled_market(
+        market: &VolatilityMarket,
+        swap_type: u8,
+        amount_in: u64
+    ) : (u64, u64) {
+        let factor = 1000000; // 10^6
+
+        if (swap_type == 0){
+            let swap_fees = (amount_in * market.swap_fee) / factor;
+            let amount_in_after_fees = amount_in - swap_fees;
+            let iv_token_amount = (amount_in_after_fees * factor) / market.settlement_price;
+
+            (iv_token_amount, swap_fees)
+        } else {
+            let usdc_amount_out = (amount_in * market.settlement_price) / factor; 
+            let swap_fees = (usdc_amount_out * market.swap_fee) / factor;
+            let usdc_amount_out_after_fees = usdc_amount_out - swap_fees;
+
+            (usdc_amount_out_after_fees, swap_fees)
+        }
+    }
+
+    fun get_swap_amount_in_for_settled_market(
+        market: &VolatilityMarket,
+        swap_type: u8,
+        amount_out: u64
+    ): u64 {
+        let factor = 1000000; // 10^6
+
+        if (swap_type == 0) {
+            // Buy IV tokens: calculate USDC input needed for desired IV output
+            let usdc_before_fees = (amount_out * market.settlement_price) / factor;
+            let amount_in = (usdc_before_fees * factor) / (factor - market.swap_fee);
+            amount_in
+        } else {
+            // Sell IV tokens: calculate IV input needed for desired USDC output (after fees)
+            let usdc_before_fees = (amount_out * factor) / (factor - market.swap_fee);
+            let iv_amount_in = (usdc_before_fees * factor) / market.settlement_price;
+            iv_amount_in
+        }
+    }
+
     // internal method to get amount out given reserves
     // avoids needing to acquire any global state
     fun get_swap_amount_out_internal(
@@ -317,36 +484,129 @@ module implied_volatility_market {
         amount_in: u64,
         market: &VolatilityMarket
     ): (u64, u64)  {
-        let iv_reserves = market.pool.reserves.iv_token_reserves;
-        let usdc_reserves = market.pool.reserves.virtual_usdc_token_reserves;
-        let amount_in_big = amount_in as u256;
-        
-        // Calculate output using constant product formula: x * y = k
-        // amount_out = (amount_in * reserve_out) / (reserve_in + amount_in)
-        if (swap_type == 0) {
-            let swap_fees = (amount_in * market.swap_fee) / 1000000;
-            let amount_in_with_fees = amount_in_big - (swap_fees as u256);
-            let amount_out = (amount_in_with_fees * iv_reserves) / (usdc_reserves + amount_in_with_fees);
-
-            (amount_out as u64, swap_fees as u64)
+        if(market.settled){
+            get_swap_amounts_for_settled_market(market, swap_type, amount_in)
         } else {
-            let amount_out_before_fees = ((amount_in_big * usdc_reserves) / (iv_reserves + amount_in_big)) as u64;
-            let swap_fees = (amount_out_before_fees * market.swap_fee) / 1000000;
-            let amount_out = amount_out_before_fees - swap_fees;
+            let iv_reserves = market.pool.reserves.iv_token_reserves;
+            let usdc_reserves = market.pool.reserves.virtual_usdc_token_reserves;
+            let amount_in_big = amount_in as u256;
+            
+            // Calculate output using constant product formula: x * y = k
+            // amount_out = (amount_in * reserve_out) / (reserve_in + amount_in)
+            if (swap_type == 0) {
+                let swap_fees = (amount_in * market.swap_fee) / 1000000;
+                let amount_in_with_fees = amount_in_big - (swap_fees as u256);
+                let amount_out = (amount_in_with_fees * iv_reserves) / (usdc_reserves + amount_in_with_fees);
 
-            (amount_out as u64, swap_fees as u64)
+                (amount_out as u64, swap_fees as u64)
+            } else {
+                let amount_out_before_fees = ((amount_in_big * usdc_reserves) / (iv_reserves + amount_in_big)) as u64;
+                let swap_fees = (amount_out_before_fees * market.swap_fee) / 1000000;
+                let amount_out = amount_out_before_fees - swap_fees;
+
+                (amount_out as u64, swap_fees as u64)
+            }
         }
     }
 
-    /// Perform a swap on the volatility market
-    /// swap_type: 0 = buy IV tokens (USDC -> IV), 1 = sell IV tokens (IV -> USDC)
-    public fun swap(
+    // internal method to get required input for a desired output amount
+    // avoids needing to acquire any global state
+    fun get_swap_amount_in_internal(
+        swap_type: u8,
+        amount_out: u64,
+        market: &VolatilityMarket
+    ): u64 {
+        if(market.settled){
+            get_swap_amount_in_for_settled_market(market, swap_type, amount_out)
+        } else {
+            let iv_reserves = market.pool.reserves.iv_token_reserves;
+            let usdc_reserves = market.pool.reserves.virtual_usdc_token_reserves;
+            let amount_out_big = amount_out as u256;
+            
+            // Calculate input using inverted constant product formula: x * y = k
+            // amount_in = (reserve_in * amount_out) / (reserve_out - amount_out)
+            // Then account for fees
+            if (swap_type == 0) {
+                // Buy IV tokens: need to calculate USDC input for desired IV output
+                let amount_in_before_fees = (usdc_reserves * amount_out_big) / (iv_reserves - amount_out_big);
+                
+                // Need to solve for amount_in where (amount_in - fees) leads to desired output
+                // Let x = amount_in, f = fee_rate (0.01 = 1%)
+                // amount_out = ((x - x*f) * iv_reserves) / (usdc_reserves + (x - x*f))
+                // Solving for x: x = (amount_out * usdc_reserves) / ((iv_reserves - amount_out) * (1 - f))
+                let fee_factor = 1000000 - market.swap_fee; // 1 - fee_rate in basis points
+                let amount_in = (amount_in_before_fees * 1000000) / (fee_factor as u256);
+                
+                (amount_in as u64)
+            } else {
+                // Sell IV tokens: need to calculate IV input for desired USDC output (after fees)
+                // account_out_after_fees = amount_out, so we need to find amount_out_before_fees
+                let amount_out_before_fees = (amount_out_big * 1000000) / (1000000 - market.swap_fee as u256);
+                let amount_in = (iv_reserves * amount_out_before_fees) / (usdc_reserves - amount_out_before_fees);
+                
+                (amount_in as u64)
+            }
+        }
+    }
+
+    // Sell IV tokens: User pays IV tokens, receives USDC
+    fun sell_to_close_internal(
+        user_address: address,
+        market: &mut VolatilityMarket,
+        market_address: address,
+        amount_in: u64,
+        amount_out: u64,
+        swap_fees: u64
+    ) : u64 acquires MarketRefs {
+        let usdc_metadata = object::address_to_object<Metadata>(market.pool.usdc_address);
+        
+        // Transfer IV tokens from user to market
+        let iv_metadata = object::address_to_object<Metadata>(market.pool.iv_address);
+        primary_fungible_store::transfer_with_ref(
+            &market.pool.iv_token_refs.transfer_ref, 
+            user_address, 
+            market_address, 
+            amount_in);
+        
+        // setup object signer to transfer tokens from pool to user and staking vault (fees)
+        let refs = borrow_global<MarketRefs>(market_address);
+        let object_signer = object::generate_signer_for_extending(&refs.extend_ref);
+
+        // transfer swap fees to the staking pool
+        let swap_fee_tokens = primary_fungible_store::withdraw(&object_signer, usdc_metadata, swap_fees);
+        primary_fungible_store::deposit(market.staking_vault_address, swap_fee_tokens);
+
+        // notify the staking vault of the swap fee earnings
+        staking_vault::swap_fees_collected(market.staking_vault_address, swap_fees);
+
+        // Ensure the market has enough USDC to tranfer (The vault covers any market shortfalls)
+        let market_usdc_balance = primary_fungible_store::balance(market_address, usdc_metadata);
+
+        if(market_usdc_balance < amount_out) {
+            staking_vault::cover_insufficent_usdc_balance(
+                market.staking_vault_address, 
+                market_address, 
+                amount_out);
+        };
+        
+        // Transfer USDC from market to user (market owns the USDC, can withdraw directly)
+        let usdc_tokens = primary_fungible_store::withdraw(&object_signer, usdc_metadata, amount_out);
+        primary_fungible_store::deposit(user_address, usdc_tokens);
+        
+        // Update reserves: decrease USDC, increase IV tokens
+        market.pool.reserves.virtual_usdc_token_reserves = market.pool.reserves.virtual_usdc_token_reserves - (amount_out + swap_fees as u256);
+        market.pool.reserves.iv_token_reserves = market.pool.reserves.iv_token_reserves + (amount_in as u256);
+
+        amount_out
+    }
+
+    fun swap_internal (
         user: &signer,
-        market_addr: address,
+        market: &mut VolatilityMarket,
+        market_address: address,
         swap_type: u8,
         amount_in: u64
-    ): u64 acquires VolatilityMarket, MarketRefs {
-        let market = borrow_global_mut<VolatilityMarket>(market_addr);
+    ) : u64 acquires MarketRefs {
         let user_addr = signer::address_of(user);
         let usdc_metadata = object::address_to_object<Metadata>(market.pool.usdc_address);
 
@@ -364,46 +624,55 @@ module implied_volatility_market {
             // Transfer USDC from user to market 
             
             let usdc_tokens = primary_fungible_store::withdraw(user, usdc_metadata, amount_in - swap_fees);
-            primary_fungible_store::deposit(market_addr, usdc_tokens);
+            primary_fungible_store::deposit(market_address, usdc_tokens);
             
             // Transfer IV tokens from market to user
-            primary_fungible_store::transfer_with_ref(&market.pool.iv_token_refs.transfer_ref, market_addr, user_addr, amount_out);
+            primary_fungible_store::transfer_with_ref(&market.pool.iv_token_refs.transfer_ref, market_address, user_addr, amount_out);
             
             // Update reserves: increase USDC, decrease IV tokens
             market.pool.reserves.virtual_usdc_token_reserves = market.pool.reserves.virtual_usdc_token_reserves + (amount_in as u256);
             market.pool.reserves.iv_token_reserves = market.pool.reserves.iv_token_reserves - (amount_out as u256);
 
+            // record the token holder
+            store_token_holder(market, user_addr);
+
+            // return the output amount
             amount_out
         } else {
-            // Sell IV tokens: User pays IV tokens, receives USDC
-            
-            // Transfer IV tokens from user to market
-            let iv_metadata = object::address_to_object<Metadata>(market.pool.iv_address);
-            let iv_tokens = primary_fungible_store::withdraw(user, iv_metadata, amount_in);
-            primary_fungible_store::deposit(market_addr, iv_tokens);
-
-            // setup object signer to transfer tokens from pool to user and staking vault (fees)
-            let refs = borrow_global<MarketRefs>(market_addr);
-            let object_signer = object::generate_signer_for_extending(&refs.extend_ref);
-
-            // transfer swap fees to the staking pool
-            let swap_fee_tokens = primary_fungible_store::withdraw(&object_signer, usdc_metadata, swap_fees);
-            primary_fungible_store::deposit(market.staking_vault_address, swap_fee_tokens);
-
-            // notify the staking vault of the swap fee earnings
-            staking_vault::swap_fees_collected(market.staking_vault_address, swap_fees);
-            
-            // Transfer USDC from market to user (market owns the USDC, can withdraw directly)
-            let usdc_tokens = primary_fungible_store::withdraw(&object_signer, usdc_metadata, amount_out);
-            primary_fungible_store::deposit(user_addr, usdc_tokens);
-            
-            // Update reserves: decrease USDC, increase IV tokens
-            market.pool.reserves.virtual_usdc_token_reserves = market.pool.reserves.virtual_usdc_token_reserves - (amount_out + swap_fees as u256);
-            market.pool.reserves.iv_token_reserves = market.pool.reserves.iv_token_reserves + (amount_in as u256);
-
-            amount_out
+            sell_to_close_internal(
+                user_addr,
+                market,
+                market_address,
+                amount_in,
+                amount_out,
+                swap_fees
+            )
         }
     }
+
+    /// Perform a swap on the volatility market
+    /// swap_type: 0 = buy IV tokens (USDC -> IV), 1 = sell IV tokens (IV -> USDC)
+    public fun swap(
+        user: &signer,
+        market_addr: address,
+        swap_type: u8,
+        amount_in: u64
+    ): u64 acquires VolatilityMarket, MarketRefs {
+        let market = borrow_global_mut<VolatilityMarket>(market_addr);
+        
+        swap_internal(user, market, market_addr, swap_type, amount_in)
+    }
+
+    // Increment the users token balance by the given amount
+    public fun store_token_holder(
+        market: &mut VolatilityMarket,
+        user_address: address
+    ) {
+        if(!vector::contains(&market.token_holders, &user_address)){
+            vector::push_back(&mut market.token_holders, user_address);
+        }
+    }
+
 
     // Opens a new short position for the given user by creating a new isolated margin account
     // 1. Deposits collateral into the isolated margin account
@@ -452,7 +721,11 @@ module implied_volatility_market {
         swap(&margin_account_signer, market_addr, 1, iv_token_amount);
 
         // update the margin account balances
-        isolated_margin_account::record_new_borrow(margin_account_address, iv_token_amount, usdc_collateral_amount);
+        isolated_margin_account::record_new_borrow(
+            margin_account_address, 
+            iv_token_amount, 
+            usdc_collateral_amount 
+        );
     }
 
     // creates a new margin account for the user if it does not already exist

@@ -29,7 +29,7 @@ module marketplace::volatility_marketplace_test {
         
         // Get implied volatility for one market - should be 25
         let implied_vol = volatility_marketplace::get_implied_volatility(marketplace_addr, asset_symbol);
-        assert!(implied_vol == 25u256, 1);
+        assert!(implied_vol == 25u64, 1);
         
         // Create second market with volatility 35
         let expiration_timestamp_2 = timestamp::now_seconds() + 172800; // 2 days from now
@@ -43,6 +43,6 @@ module marketplace::volatility_marketplace_test {
         
         // Get implied volatility for two markets - should be average (25+35)/2 = 30
         let implied_vol_avg = volatility_marketplace::get_implied_volatility(marketplace_addr, asset_symbol);
-        assert!(implied_vol_avg == 30u256, 2);
+        assert!(implied_vol_avg == 30u64, 2);
     }
 }

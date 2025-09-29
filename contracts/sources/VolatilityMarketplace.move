@@ -183,12 +183,12 @@ module volatility_marketplace {
         owner: &signer,
         marketplace_address: address,
         market_id: u64,
-        historical_volatility: u256
+        settlement_price: u64
     ) acquires Marketplace {
         let marketplace = borrow_global_mut<Marketplace>(marketplace_address);
         let market_address = *table::borrow(&marketplace.market_addresses, market_id);
         
-        implied_volatility_market::settle_market(owner, market_address, historical_volatility);
+        implied_volatility_market::settle_market(owner, market_address, settlement_price);
 
         // remove the market from active markets by asset
         let asset_symbol = implied_volatility_market::get_asset_symbol(market_address);
@@ -260,7 +260,7 @@ module volatility_marketplace {
     public fun get_implied_volatility(
         marketplace_address: address,
         asset_symbol: string::String
-    ) : u256 acquires Marketplace {
+    ) : u64 acquires Marketplace {
         let marketplace = borrow_global<Marketplace>(marketplace_address);
         assert!(table::contains(&marketplace.active_markets_by_asset, asset_symbol), error::not_found(E_MARKET_NOT_FOUND));
         
@@ -269,18 +269,18 @@ module volatility_marketplace {
         
         assert!(num_markets > 0, error::not_found(E_MARKET_NOT_FOUND));
         
-        let total_volatility = 0u256;
+        let total_quote = 0u64;
         let i = 0;
         
         while (i < num_markets) {
             let market_address = *vector::borrow(markets_vector, i);
-            let market_volatility = implied_volatility_market::get_volatility(market_address);
-            total_volatility = total_volatility + market_volatility;
+            let market_quote = implied_volatility_market::get_quote(market_address);
+            total_quote = total_quote + market_quote;
             i = i + 1;
         };
         
         // Calculate average volatility
-        total_volatility / (num_markets as u256)
+        total_quote / num_markets
     }
 }
 }

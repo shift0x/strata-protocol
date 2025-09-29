@@ -78,6 +78,24 @@ module staking_vault {
         object_addr
     }
 
+    public(friend) fun cover_insufficent_usdc_balance(
+        liquidity_pool_address: address,
+        vault_address: address,
+        amount: u64
+    ) acquires Vault, AccountRefs {
+        // get the vault and signer
+        let vault = borrow_global_mut<Vault>(vault_address);
+        let vault_signer = get_signer(vault_address);
+
+        // send the requested borrow amount
+        let usdc_metadata = object::address_to_object<Metadata>(vault.usdc_address);
+        let usdc_tokens = primary_fungible_store::withdraw(&vault_signer, usdc_metadata, amount);
+        primary_fungible_store::deposit(liquidity_pool_address, usdc_tokens); 
+
+        // reduce the staking balance USDC (vault recording a loss)
+        vault.usdc_staked_amount = vault.usdc_staked_amount - amount;
+    }
+
     public(friend) fun borrow_on_margin(
         borrow_margin_account: &signer,
         liquidity_pool_address: address,
@@ -116,6 +134,15 @@ module staking_vault {
         let vault = borrow_global_mut<Vault>(vault_address);
 
         vault.swap_fees_earned = vault.swap_fees_earned + amount;
+        vault.usdc_staked_amount = vault.usdc_staked_amount + amount;
+    }
+
+    public(friend) fun volatility_market_profit(
+        vault_address: address,
+        amount: u64
+    ) acquires Vault {
+        let vault = borrow_global_mut<Vault>(vault_address);
+
         vault.usdc_staked_amount = vault.usdc_staked_amount + amount;
     }
 
