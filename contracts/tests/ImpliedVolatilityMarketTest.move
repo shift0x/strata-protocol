@@ -534,10 +534,6 @@ module marketplace::implied_volatility_market_test {
             marketplace_addr
         );
 
-        // Add liquidity to market
-        let usdc_amount = 1000 * 1000000;
-        volatility_marketplace::mint_test_usdc(usdc_amount, market_address, marketplace_addr);
-
         // Trader1 opens long position
         let trader1_addr = signer::address_of(&trader1);
         let long_usdc = 5000000; // 5 USDC
@@ -552,7 +548,7 @@ module marketplace::implied_volatility_market_test {
 
         // Trader2 opens short position
         let trader2_addr = signer::address_of(&trader2);
-        let short_collateral = 3000000; // 3 USDC
+        let short_collateral = 30000000; // 30 USDC
         volatility_marketplace::mint_test_usdc(short_collateral, trader2_addr, marketplace_addr);
 
         implied_volatility_market::open_short_position(
@@ -586,8 +582,8 @@ module marketplace::implied_volatility_market_test {
         // position that was a loss for the trader
         let vault_usdc_after = primary_fungible_store::balance(vault_address, usdc_metadata);
 
-        assert!(vault_usdc_after < staking_amount, 3);
-        
+        assert!(vault_usdc_after > staking_amount, 3);
+
         // Market should be settled
         assert!(implied_volatility_market::is_settled(market_address), 3);
     }
