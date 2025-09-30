@@ -1,0 +1,467 @@
+address marketplace {
+module options_exchange {
+    use std::error;
+    use std::signer;
+    use std::debug;
+    use std::string::{Self, String};
+    use std::vector;
+    use std::table::{Self, Table};
+    use marketplace::binomial_option_pricing;
+
+    // ------------------------------------------------------------------------
+    // Constants and errors
+    // ------------------------------------------------------------------------
+
+    const E_U64_OVERFLOW: u64 = 1;
+    const E_POSITION_EMPTY: u64 = 2;
+
+    // 1e18 fixed-point scaling used by the pricing model
+    const ONE_E18: u256 = 1000000000000000000u256;
+
+    // Basis points to 1e18 fixed-point: 1 bp = 1e-4 => 1e14 in 1e18 fp
+    const ONE_BP_IN_FP: u256 = 100000000000000u256; // 1e14
+
+    // Time constants
+    const SECONDS_PER_DAY: u64 = 86400;
+
+    // Maintenance margin percent in bps (e.g., 7500 = 75%)
+    const MAINTENANCE_MARGIN_BPS: u64 = 7500;
+
+    // The multiplier per contract (100 to emulate equities)
+    const CONTRACT_MULTIPLIER: u64 = 100;
+
+    // ------------------------------------------------------------------------
+    // Enums and data structures
+    // ------------------------------------------------------------------------
+
+    enum OrderStatus has copy, drop, store {
+        OPEN,
+        EXECUTED,
+        CANCELLED,
+        EXPIRED,
+    }
+
+    enum OptionType has copy, drop, store {
+        CALL,
+        PUT,
+    }
+
+    enum Side has copy, drop, store {
+        LONG,
+        SHORT,
+    }
+
+    struct PositionLeg has store, drop, copy {
+        // the type of the option (call or put)
+        option_type: OptionType,
+        // the side of the position (long or short)
+        side: Side,
+        // number of contracts (nonzero)
+        amount: u256,
+        // strike price expressed in the same base units as underlying_price
+        strike_price: u256,
+        // expiration timestamp (seconds since epoch)
+        expiration: u64,
+        // execution status and bookkeeping
+        status: OrderStatus,
+        // the price at which the position was opened
+        open_price: u64,
+        // the time at which the position was opened
+        open_timestamp: u64,
+        // the price at which the position was closed
+        close_price: u64,
+        // the time at which the position was closed
+        close_timestamp: u64,
+    }
+
+    struct Position has store, drop, copy {
+        // the unique id of the position
+        id: u64,
+        // the symbol of the underlying asset
+        asset_symbol: String,
+        // the legs accociated with the position
+        legs: vector<PositionLeg>,
+    }
+
+    struct OptionsExchange has key {
+        // list of all user positions
+        user_positions: vector<Position>,
+        // mapping of users to their positions
+        user_position_lookup: Table<address, vector<u64>>,
+        // counter for positions created in the exchange
+        position_counter: u64,
+    }
+
+    struct Quote has store, drop {
+        // debit amount for the position
+        net_debit: u256,
+        // credit amount for the position
+        net_credit: u256,
+        // initial margin for the position
+        initial_margin: u256,
+        // maintenance margin for the position
+        maintenance_margin: u256,
+    }
+
+    // ------------------------------------------------------------------------
+    // Public constructor functions for testing
+    // ------------------------------------------------------------------------
+    
+    public fun create_position_leg(
+        option_type: OptionType,
+        side: Side,
+        amount: u256,
+        strike_price: u256,
+        expiration: u64
+    ): PositionLeg {
+        PositionLeg {
+            option_type,
+            side,
+            amount,
+            strike_price,
+            expiration,
+            status: OrderStatus::OPEN,
+            open_price: 0,
+            open_timestamp: 0,
+            close_price: 0,
+            close_timestamp: 0,
+        }
+    }
+    
+    public fun create_position(
+        id: u64,
+        asset_symbol: String,
+        legs: vector<PositionLeg>
+    ): Position {
+        Position {
+            id,
+            asset_symbol,
+            legs,
+        }
+    }
+    
+    public fun create_call(): OptionType { OptionType::CALL }
+    public fun create_put(): OptionType { OptionType::PUT }
+    public fun create_long(): Side { Side::LONG }
+    public fun create_short(): Side { Side::SHORT }
+    
+    // Quote accessor functions
+    public fun get_net_debit(quote: &Quote): u256 { quote.net_debit }
+    public fun get_net_credit(quote: &Quote): u256 { quote.net_credit }
+    public fun get_initial_margin(quote: &Quote): u256 { quote.initial_margin }
+    public fun get_maintenance_margin(quote: &Quote): u256 { quote.maintenance_margin }
+
+    // ------------------------------------------------------------------------
+    // Exchange lifecycle (minimal)
+    // ------------------------------------------------------------------------
+
+    public fun create_exchange(owner: &signer) {
+        let exchange = OptionsExchange { 
+            user_positions: vector::empty<Position>(),
+            user_position_lookup: table::new<address, vector<u64>>(),
+            position_counter: 0,
+        };
+
+        move_to<OptionsExchange>(owner, exchange);
+    }
+
+    public fun open_position(
+        user: &signer,
+        exchange_address: address,
+        position: Position
+    ) acquires OptionsExchange {
+        let exchange = borrow_global_mut<OptionsExchange>(exchange_address);
+        let user_addr = signer::address_of(user);
+
+        // ensure the user exists
+        ensure_user_created(user_addr, exchange);
+
+        // create the user position
+        position.id = exchange.position_counter;
+        vector::push_back(&mut exchange.user_positions, position);
+
+        let user_positions_ref = table::borrow_mut<address, vector<u64>>(&mut exchange.user_position_lookup, user_addr);
+        vector::push_back(user_positions_ref, position.id);
+        
+        // update the position counter
+        exchange.position_counter = exchange.position_counter + 1;
+    }
+
+    fun ensure_user_created(
+        user_address: address,
+        exchange: &mut OptionsExchange
+    ) {
+        if (!table::contains<address, vector<u64>>(&exchange.user_position_lookup, user_address)) {
+            let empty: vector<u64> = vector::empty<u64>();
+            table::add(&mut exchange.user_position_lookup, user_address, empty);
+        };
+    }
+
+    // ------------------------------------------------------------------------
+    // Quoting (premium) and margin
+    // ------------------------------------------------------------------------
+
+    // Inputs:
+    // - underlying_price: in asset's base units (same units as strike and multiplier effects)
+    // - risk_free_rate_bps: annualized rate in basis points (e.g., 500 = 5.00%)
+    // - volatility_bps: annualized implied vol in basis points (e.g., 2000 = 20.00%)
+    // - current_time_secs: UNIX timestamp (seconds)
+    public fun price_position(
+        position: &Position,
+        underlying_price: u256,
+        risk_free_rate_bps: u256,
+        volatility_bps: u256,
+        current_time_secs: u64
+    ): Quote {
+        let legs_ref = &position.legs;
+        let n = vector::length<PositionLeg>(legs_ref);
+        assert!(n > 0, E_POSITION_EMPTY);
+
+        // Accumulators in u256
+        let net_debit_u256 = 0u256;
+        let net_credit_u256 = 0u256;
+
+        let i = 0;
+        while (i < n) {
+            let leg_ref = vector::borrow<PositionLeg>(legs_ref, i);
+
+            let days_to_exp = if (leg_ref.expiration > current_time_secs) {
+                (leg_ref.expiration - current_time_secs) / SECONDS_PER_DAY
+            } else {
+                0
+            };
+
+            let is_call = if (leg_ref.option_type == OptionType::CALL) {
+                true
+            } else {
+                false
+            };
+
+            // Price per underlying unit in 1e18 fp
+            let k_fp = leg_ref.strike_price;
+            let premium_fp = binomial_option_pricing::get_option_price(
+                underlying_price,
+                k_fp,
+                risk_free_rate_bps,
+                volatility_bps,
+                days_to_exp,
+                is_call
+            );
+
+            // Convert to quote currency units per contract, then multiply by amount
+            // 1 contract = 100 shares (like stocks)
+            let per_contract_premium = premium_fp * (CONTRACT_MULTIPLIER as u256); 
+
+            // calculate the total leg premium by multiplying the contract cost by the 
+            // number of units requested
+            let leg_total_premium = mul_div_u256(
+                per_contract_premium,
+                leg_ref.amount,
+                ONE_E18
+            );
+
+            if (leg_ref.side == Side::LONG) {
+                net_debit_u256 = net_debit_u256 + leg_total_premium;
+            } else {
+                net_credit_u256 = net_credit_u256 + leg_total_premium;
+            };
+
+            i = i + 1;
+        };
+
+        // Initial margin via standard broker margin methodology
+        let initial_margin_u256 = calculate_standard_margin(
+            legs_ref,
+            underlying_price
+        );
+
+        let maintenance_margin_u256 = (initial_margin_u256 * (MAINTENANCE_MARGIN_BPS as u256)) / 10000u256;
+        
+        Quote {
+            net_debit: net_debit_u256,
+            net_credit: net_credit_u256,
+            initial_margin: initial_margin_u256,
+            maintenance_margin: maintenance_margin_u256,
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Margin engine (standard broker methodology)
+    // ------------------------------------------------------------------------
+
+    // Calculate initial margin using standard broker methodology
+    // This implements the 3-step process used by most brokers
+    fun calculate_standard_margin(
+        legs: &vector<PositionLeg>,
+        underlying_price: u256
+    ): u256 {
+        let n = vector::length<PositionLeg>(legs);
+        
+        // For single leg positions, use direct calculation
+        if (n == 1) {
+            let leg = vector::borrow<PositionLeg>(legs, 0);
+            return calculate_single_leg_margin(leg, underlying_price);
+        };
+        
+        // For multi-leg positions, find short call and short put components
+        let short_call_margin = 0u256;
+        let short_put_margin = 0u256;
+        let short_call_premium = 0u256;
+        let short_put_premium = 0u256;
+        
+        let i = 0;
+        while (i < n) {
+            let leg = vector::borrow<PositionLeg>(legs, i);
+            
+            if (leg.side == Side::SHORT) {
+                // Calculate premium for this short leg (simplified - using intrinsic + time value estimate)
+                let premium = calculate_leg_premium_estimate(leg, underlying_price);
+                
+                if (leg.option_type == OptionType::CALL) {
+                    let margin = calculate_short_call_margin(leg, underlying_price, premium);
+                    short_call_margin = short_call_margin + margin;
+                    short_call_premium = short_call_premium + premium;
+                } else {
+                    let margin = calculate_short_put_margin(leg, underlying_price, premium);
+                    short_put_margin = short_put_margin + margin;
+                    short_put_premium = short_put_premium + premium;
+                };
+            };
+            
+            i = i + 1;
+        };
+        
+        // Step 3: Determine total margin as the higher of the two combinations
+        let combination_a = short_call_margin + short_put_premium;
+        let combination_b = short_put_margin + short_call_premium;
+        
+        if (combination_a > combination_b) { combination_a } else { combination_b }
+    }
+    
+    // Calculate margin for a single leg position
+    fun calculate_single_leg_margin(
+        leg: &PositionLeg, 
+        underlying_price: u256
+    ): u256 {
+        // Long positions don't require margin beyond premium paid
+        if (leg.side == Side::LONG) {
+            return 0u256;
+        };
+        
+        // For short positions, calculate premium and margin
+        let premium = calculate_leg_premium_estimate(leg, underlying_price);
+        
+        if (leg.option_type == OptionType::CALL) {
+            calculate_short_call_margin(leg, underlying_price, premium)
+        } else {
+            calculate_short_put_margin(leg, underlying_price, premium)
+        }
+    }
+    
+    // Step 1: Calculate margin for short call
+    // Margin = max(20% of underlying - OTM amount + premium, 10% of underlying + premium)
+    fun calculate_short_call_margin(
+        leg: &PositionLeg,
+        underlying_price: u256, 
+        premium: u256
+    ): u256 {
+        // Contract value: underlying_price (scaled) × amount × CONTRACT_MULTIPLIER, then unscale
+        let contract_value = (underlying_price * leg.amount * (CONTRACT_MULTIPLIER as u256)) / ONE_E18;
+        
+        // Calculation A: 20% of underlying - OTM amount + premium
+        let calc_a = if (leg.strike_price > underlying_price) {
+            // Call is OTM (strike > underlying)
+            let price_diff = leg.strike_price - underlying_price; // Both scaled, difference scaled
+            let otm_amount = (price_diff * leg.amount * (CONTRACT_MULTIPLIER as u256)) / ONE_E18;
+            let base_margin = (contract_value * 20) / 100; // 20% of underlying value
+            if (base_margin > otm_amount) {
+                base_margin - otm_amount + premium
+            } else {
+                premium // Margin can't go below premium
+            }
+        } else {
+            // Call is ITM or ATM
+            ((contract_value * 20) / 100) + premium // 20% of underlying + premium
+        };
+        
+        // Calculation B: 10% of underlying + premium
+        let calc_b = ((contract_value * 10) / 100) + premium;
+        
+        // Return the greater of the two
+        if (calc_a > calc_b) { calc_a } else { calc_b }
+    }
+    
+    // Step 2: Calculate margin for short put  
+    // Margin = max(20% of underlying - OTM amount + premium, 10% of strike + premium)
+    fun calculate_short_put_margin(
+        leg: &PositionLeg,
+        underlying_price: u256,
+        premium: u256
+    ): u256 {
+        // Contract value based on underlying price
+        let contract_value = (underlying_price * leg.amount * (CONTRACT_MULTIPLIER as u256)) / ONE_E18;
+        // Strike value for calculation B
+        let strike_value = (leg.strike_price * leg.amount * (CONTRACT_MULTIPLIER as u256)) / ONE_E18;
+        
+        // Calculation A: 20% of underlying - OTM amount + premium
+        let calc_a = if (underlying_price > leg.strike_price) {
+            // Put is OTM (underlying > strike)
+            let price_diff = underlying_price - leg.strike_price; // Both scaled, difference scaled
+            let otm_amount = (price_diff * leg.amount * (CONTRACT_MULTIPLIER as u256)) / ONE_E18;
+            let base_margin = (contract_value * 20) / 100; // 20% of underlying value
+            if (base_margin > otm_amount) {
+                base_margin - otm_amount + premium
+            } else {
+                premium // Margin can't go below premium
+            }
+        } else {
+            // Put is ITM or ATM
+            ((contract_value * 20) / 100) + premium // 20% of underlying + premium
+        };
+        
+        // Calculation B: 10% of strike + premium
+        let calc_b = ((strike_value * 10) / 100) + premium;
+        
+        // Return the greater of the two
+        if (calc_a > calc_b) { calc_a } else { calc_b }
+    }
+    
+    // Simplified premium estimation for margin calculation
+    // In practice, this would use the actual option pricing model
+    fun calculate_leg_premium_estimate(
+        leg: &PositionLeg,
+        underlying_price: u256
+    ): u256 {
+        // Calculate intrinsic value
+        let intrinsic = if (leg.option_type == OptionType::CALL) {
+            if (underlying_price > leg.strike_price) {
+                underlying_price - leg.strike_price
+            } else {
+                0u256
+            }
+        } else {
+            if (leg.strike_price > underlying_price) {
+                leg.strike_price - underlying_price
+            } else {
+                0u256
+            }
+        };
+        
+        // Add simple time value estimate (5% of underlying for ATM options)
+        let time_value = underlying_price / 20; // 5% base time value (already scaled)
+        let total_premium_per_unit = intrinsic + time_value; // Both scaled by 1e18
+        
+        // Scale by contract multiplier and amount, then unscale to get final premium
+        (total_premium_per_unit * leg.amount * (CONTRACT_MULTIPLIER as u256)) / ONE_E18
+    }
+
+    // ------------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------------
+
+    // Safe multiply/divide: (a * b) / denom in u256
+    fun mul_div_u256(a: u256, b: u256, denom: u256): u256 {
+        (a * b) / denom
+    }
+}
+}

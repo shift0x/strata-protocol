@@ -5,6 +5,7 @@ module marketplace::isolated_margin_account {
     use aptos_framework::object::{Self, Object, ExtendRef};
     
     friend marketplace::implied_volatility_market;
+    friend marketplace::options_exchange;
     
     struct AccountRefs has key {
         extend_ref: object::ExtendRef
