@@ -63,8 +63,8 @@ function VolatilityMarket() {
           width: "100%",
           height: "100%",
           symbol: getSymbolForMarket(selectedMarket),
-          interval: "5",
-          timezone: "Etc/UTC",
+          interval: "1D",
+          timezone: "ETC/UTC",
           theme: "dark",
           style: "1",
           locale: "en",
@@ -73,7 +73,20 @@ function VolatilityMarket() {
           allow_symbol_change: false,
           container_id: "tradingview_chart",
           autosize: true,
-          studies: [],
+          studies: [
+            {
+              id: "MASimple@tv-basicstudies",
+              inputs: {
+                length: 20
+              }
+            },
+            {
+              id: "HV@tv-basicstudies",
+              inputs: {
+                length: 20
+              }
+            }
+          ],
           overrides: {
             "paneProperties.background": "#000000",
             "paneProperties.vertGridProperties.color": "#2a2a2a",

@@ -11,7 +11,7 @@ export const useVolatilityMarket = () => {
 };
 
 export const VolatilityMarketProvider = ({ children }) => {
-  const [selectedMarket, setSelectedMarket] = useState('BTC-USD (30d)');
+  const [selectedMarket, setSelectedMarket] = useState('APT-USD (30d)');
   
   // Available markets with their data
   const markets = [
