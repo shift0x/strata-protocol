@@ -567,7 +567,7 @@ module implied_volatility_market {
         let market_usdc_balance = primary_fungible_store::balance(market_address, usdc_metadata);
 
         if(market_usdc_balance < required_usdc_balance) {
-            staking_vault::cover_insufficent_usdc_balance(
+            staking_vault::withdraw_from_vault(
                 market.staking_vault_address, 
                 market_address, 
                 required_usdc_balance);

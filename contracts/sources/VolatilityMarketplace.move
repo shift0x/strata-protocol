@@ -5,6 +5,7 @@ module volatility_marketplace {
     use std::signer;
     use std::string;
     use std::option;
+    use std::debug;
     use std::vector::{Self};
     use std::table::{Self, Table};
     use aptos_framework::timestamp;
@@ -19,6 +20,8 @@ module volatility_marketplace {
     const E_MARKET_NOT_FOUND: u64 = 2;
     const E_MARKET_ALREADY_EXISTS: u64 = 3;
     const E_INVALID_EXPIRATION: u64 = 4;
+
+    const ONE_E12: u256 = 1000000000000; // 1e6 scaling factor
 
     // Capabilities for managing the TestUSDC token
     struct TestUSDCRefs has store {
@@ -43,7 +46,9 @@ module volatility_marketplace {
         // TestUSDC token metadata
         test_usdc_metadata: Object<Metadata>,
         // Staking vault address
-        staking_vault_address: address
+        staking_vault_address: address,
+        // The address of usdc token
+        usdc_address: address
     }
 
     // Helper function to convert u64 to decimal string
@@ -67,7 +72,7 @@ module volatility_marketplace {
     }
 
     // Initialize the marketplace - setting the owner to the deployer
-    public fun create_marketplace(owner: &signer) {
+    public fun create_marketplace(owner: &signer) : address {
         let creator_addr = signer::address_of(owner);
         
         // Create TestUSDC token
@@ -87,11 +92,14 @@ module volatility_marketplace {
             active_markets_by_asset: table::new(),
             test_usdc_refs,
             test_usdc_metadata,
-            staking_vault_address: vault_address
+            staking_vault_address: vault_address,
+            usdc_address
         };
 
         // Store resources
         move_to(owner, marketplace);
+
+        creator_addr
     }
 
     fun create_test_usdc_token(
@@ -260,7 +268,7 @@ module volatility_marketplace {
     public fun get_implied_volatility(
         marketplace_address: address,
         asset_symbol: string::String
-    ) : u64 acquires Marketplace {
+    ) : u256 acquires Marketplace {
         let marketplace = borrow_global<Marketplace>(marketplace_address);
         assert!(table::contains(&marketplace.active_markets_by_asset, asset_symbol), error::not_found(E_MARKET_NOT_FOUND));
         
@@ -269,18 +277,28 @@ module volatility_marketplace {
         
         assert!(num_markets > 0, error::not_found(E_MARKET_NOT_FOUND));
         
-        let total_quote = 0u64;
+        let total_quote = 0u256;
         let i = 0;
         
         while (i < num_markets) {
             let market_address = *vector::borrow(markets_vector, i);
-            let market_quote = implied_volatility_market::get_quote(market_address);
+            // need to upcase from 10^6 -> 10^18
+            let market_quote = (implied_volatility_market::get_quote(market_address) as u256) * ONE_E12; 
             total_quote = total_quote + market_quote;
             i = i + 1;
         };
         
         // Calculate average volatility
-        total_quote / num_markets
+        total_quote / (num_markets as u256)
+    }
+
+    #[view]
+    public fun get_usdc_address (
+        marketplace_address: address
+    ) : address acquires Marketplace {
+        let marketplace = borrow_global<Marketplace>(marketplace_address);
+        
+        marketplace.usdc_address
     }
 }
 }

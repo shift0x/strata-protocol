@@ -1,5 +1,6 @@
 address marketplace {
 module price_oracle {
+    use std::debug;
     use std::timestamp;
     use std::string;
     use std::signer;
@@ -18,28 +19,33 @@ module price_oracle {
         // mapping from asset symbol to pyth market id
         pyth_price_identifier_lookup: Table<string::String, vector<u8>>,
         // mapping from asset to mock price
-        asset_mock_price_lookup: Table<string::String, u64>
+        asset_mock_price_lookup: Table<string::String, u256>
     }
 
     public fun create(
         owner: &signer
-    ) {
+    ) : address {
+        let owner_address = signer::address_of(owner);
+
         let oracle = PriceOracle {
-            owner: signer::address_of(owner),
+            owner: owner_address,
             pyth_price_identifier_lookup: table::new(),
             asset_mock_price_lookup: table::new()
         };
 
         move_to(owner, oracle);
+
+        owner_address
     }
 
     // used for testing to set the price of a given asset
     public fun set_mock_price(
         sender: &signer,
+        oracle_address: address,
         asset_symbol: string::String,
-        mock_price: u64
+        mock_price: u256
     ) acquires PriceOracle {
-        let oracle = borrow_global_mut<PriceOracle>(@marketplace);
+        let oracle = borrow_global_mut<PriceOracle>(oracle_address);
         let sender_address = signer::address_of(sender);
 
         assert!(sender_address == oracle.owner, E_ONLY_OWNER);
@@ -57,7 +63,7 @@ module price_oracle {
     public fun get_price(
         marketplace_address: address,
         asset_symbol: string::String
-    ) : u64 acquires PriceOracle {
+    ) : u256 acquires PriceOracle {
         let oracle = borrow_global<PriceOracle>(marketplace_address);
 
         // If there is a mock price stored, then return that
@@ -75,7 +81,7 @@ module price_oracle {
 
             let i64_price = price::get_price(&pyth_price);
 
-            i64::get_magnitude_if_positive(&i64_price)
+            i64::get_magnitude_if_positive(&i64_price) as u256
         }
     }
 }

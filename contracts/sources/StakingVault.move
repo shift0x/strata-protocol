@@ -14,6 +14,7 @@ module staking_vault {
     use aptos_framework::primary_fungible_store::{Self};
     use marketplace::volatility_marketplace::{Self};
     use marketplace::implied_volatility_market::{Self};
+    use marketplace::options_exchange::{Self};
 
     // Error codes
     const E_INSUFFICIENT_BALANCE: u64 = 1;
@@ -21,6 +22,7 @@ module staking_vault {
 
     friend marketplace::volatility_marketplace;
     friend marketplace::implied_volatility_market;
+    friend marketplace::options_exchange;
 
     struct AccountRefs has key {
         extend_ref: object::ExtendRef
@@ -78,9 +80,9 @@ module staking_vault {
         object_addr
     }
 
-    public(friend) fun cover_insufficent_usdc_balance(
+    public(friend) fun withdraw_from_vault(
         vault_address: address,
-        liquidity_pool_address: address,
+        destination_address: address,
         amount: u64
     ) acquires Vault, AccountRefs {
         // get the vault and signer
@@ -90,7 +92,7 @@ module staking_vault {
         // send the requested borrow amount
         let usdc_metadata = object::address_to_object<Metadata>(vault.usdc_address);
         let usdc_tokens = primary_fungible_store::withdraw(&vault_signer, usdc_metadata, amount);
-        primary_fungible_store::deposit(liquidity_pool_address, usdc_tokens); 
+        primary_fungible_store::deposit(destination_address, usdc_tokens); 
 
         // reduce the staking balance USDC (vault recording a loss)
         vault.usdc_staked_amount = vault.usdc_staked_amount - amount;

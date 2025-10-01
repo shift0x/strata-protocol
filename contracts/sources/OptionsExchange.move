@@ -14,6 +14,7 @@ module options_exchange {
     use marketplace::isolated_margin_account;
     use marketplace::price_oracle;
     use marketplace::volatility_marketplace;
+    use marketplace::staking_vault;
 
     // ------------------------------------------------------------------------
     // Constants and errors
@@ -21,9 +22,14 @@ module options_exchange {
 
     const E_U64_OVERFLOW: u64 = 1;
     const E_POSITION_EMPTY: u64 = 2;
+    const E_POSITION_NOT_FOUND: u64 = 3;
+    const E_POSITION_CLOSED: u64 = 4;
+    const E_UNAUTHORIZED: u64 = 5;
+    const E_POSITION_NOT_OPEN: u64 = 6;
 
     // 1e18 fixed-point scaling used by the pricing model
     const ONE_E18: u256 = 1000000000000000000u256;
+    const ONE_E12: u256 = 1000000000000u256;
 
     // Basis points to 1e18 fixed-point: 1 bp = 1e-4 => 1e14 in 1e18 fp
     const ONE_BP_IN_FP: u256 = 100000000000000u256; // 1e14
@@ -74,6 +80,8 @@ module options_exchange {
     struct Position has store, drop, copy {
         // the unique id of the position
         id: u64,
+        // the trader that opened the position
+        trader_address: address,
         // the symbol of the underlying asset
         asset_symbol: String,
         // the legs accociated with the position
@@ -122,7 +130,7 @@ module options_exchange {
     public fun create_exchange(
         owner: &signer,
         usdc_address: address
-    ) {
+    ) : address {
         let exchange = OptionsExchange { 
             user_positions: vector::empty<Position>(),
             user_position_lookup: table::new<address, vector<u64>>(),
@@ -132,7 +140,37 @@ module options_exchange {
         };
 
         move_to<OptionsExchange>(owner, exchange);
+
+        // create the price oracle
+        price_oracle::create(owner);
+
+        signer::address_of(owner)
     }
+
+    public fun close_position(
+        user: &signer,
+        marketplace_address: address,
+        exchange_address: address,
+        position_id: u64
+    ) acquires OptionsExchange {
+        let exchange = borrow_global_mut<OptionsExchange>(exchange_address);
+        let user_addr = signer::address_of(user);
+
+        // ensure the position exists
+        assert!(position_id < exchange.position_counter, E_POSITION_NOT_FOUND);
+
+        let position = exchange.user_positions[position_id];
+
+        // ensure the position is open
+        assert!(position.status == OrderStatus::OPEN, E_POSITION_NOT_OPEN);
+
+        // ensure the position is owned by the user
+        assert!(position.trader_address == user_addr, E_UNAUTHORIZED);
+
+        // close the position
+        execute_close_position(user, exchange, &mut position, marketplace_address);
+    }
+
 
     public fun open_position(
         user: &signer,
@@ -148,6 +186,8 @@ module options_exchange {
 
         // create the user position
         position.id = exchange.position_counter;
+        position.trader_address = user_addr;
+
         vector::push_back(&mut exchange.user_positions, position);
 
         let user_positions_ref = table::borrow_mut<address, vector<u64>>(&mut exchange.user_position_lookup, user_addr);
@@ -158,16 +198,12 @@ module options_exchange {
 
         // execute the trade
         execute_open_position(user, &mut position, marketplace_address, exchange);
-
     }
 
-
-    fun execute_open_position(
-        user: &signer,
-        position: &mut Position,
-        marketplace_address: address,
-        exchange: &mut OptionsExchange
-    ) {
+    fun get_quote_for_position(
+        position: &Position,
+        marketplace_address: address
+    ) : Quote {
         // get the current IV from the volatility marketplace
         let volatility_bps = volatility_marketplace::get_implied_volatility(
             marketplace_address, 
@@ -180,24 +216,108 @@ module options_exchange {
         // get the risk free rate from the oracle
         let risk_free_rate_bps = price_oracle::get_price(marketplace_address, string::utf8(b"Rates.US10Y"));
 
-        // quote the position to determine net debit and margin amounts
-        position.opening_quote = price_position(
+        price_position(
             position, 
-            underlying_price as u256, 
-            risk_free_rate_bps as u256, 
-            volatility_bps as u256, 
+            underlying_price, 
+            risk_free_rate_bps, 
+            volatility_bps, 
             timestamp::now_seconds()
-        );
+        )
+    }
+
+    fun execute_close_position(
+        trader: &signer,
+        exchange: &OptionsExchange,
+        position: &mut Position,
+        marketplace_address: address
+    ) {
+        let trader_address = signer::address_of(trader);
+        
+        // quote the position to determine net debit and margin amounts
+        position.closing_quote = get_quote_for_position(position, marketplace_address);
+
+        // determine the profit or loss on the position
+        let opening_debit = position.opening_quote.net_debit;
+        let closing_debit = position.closing_quote.net_debit;
+        let opening_credit = position.opening_quote.net_credit;
+        let closing_credit = position.closing_quote.net_credit;
+
+        let (profit, loss) = if(opening_debit > 0){
+            if(closing_debit > opening_debit){
+                (closing_debit - opening_debit, 0)
+            } else {
+                (0, opening_debit - closing_debit)
+            }
+        } else {
+            if(opening_credit > closing_credit){
+                (opening_credit - closing_credit, 0)
+            } else {
+                (0, closing_credit - opening_credit)
+            }
+        };
+
+        let initial_trader_deposit = position.opening_quote.net_debit + 
+            position.opening_quote.initial_margin - 
+            position.opening_quote.net_credit; 
+
+        let transfer_amount_to_trader = initial_trader_deposit;
+        let user_margin_account = *table::borrow(&exchange.user_margin_accounts, trader_address);
+
+        if(profit > 0){ // then transfer the profit amount from the vault to the margin account
+            let profit_64 = (profit / ONE_E12) as u64;
+
+            staking_vault::withdraw_from_vault(
+                marketplace_address, 
+                user_margin_account, 
+                profit_64);
+
+            transfer_amount_to_trader = transfer_amount_to_trader + profit;
+        } else if(loss > 0){ // transfer the loss from the margin account to the vault
+            if(loss > transfer_amount_to_trader){
+                transfer_amount_to_trader = 0;
+            } else {
+                transfer_amount_to_trader = transfer_amount_to_trader - loss;
+            }
+        };
+
+        if(transfer_amount_to_trader > 0){
+            let transfer_amount_trader_64 = (transfer_amount_to_trader / ONE_E12) as u64;
+            let margin_account_signer = isolated_margin_account::get_signer(user_margin_account);
+            let usdc_metadata = object::address_to_object<Metadata>(exchange.usdc_address);
+            let usdc_tokens = primary_fungible_store::withdraw(
+                &margin_account_signer, 
+                usdc_metadata, 
+                transfer_amount_trader_64);
+            
+            primary_fungible_store::deposit(trader_address, usdc_tokens); 
+        };
+        
+
+        // update the position status
+        position.status = OrderStatus::CLOSED;
+    }
+
+    fun execute_open_position(
+        user: &signer,
+        position: &mut Position,
+        marketplace_address: address,
+        exchange: &mut OptionsExchange
+    ) {
+        // quote the position to determine net debit and margin amounts
+        position.opening_quote = get_quote_for_position(position, marketplace_address);
 
         // determine the amount required to open the position
         let net_user_amount_in = position.opening_quote.net_debit + 
             position.opening_quote.initial_margin - 
             position.opening_quote.net_credit;
 
+        let net_user_amount_in_64 = net_user_amount_in / ONE_E12; // downscale to 6 decimals
+
         // transfer usdc to the user margin account
         let user_address = signer::address_of(user);
         let usdc_metadata = object::address_to_object<Metadata>(exchange.usdc_address);
-        let usdc_tokens = primary_fungible_store::withdraw(user, usdc_metadata, net_user_amount_in as u64);
+        
+        let usdc_tokens = primary_fungible_store::withdraw(user, usdc_metadata, net_user_amount_in_64 as u64);
         let user_margin_account = *table::borrow(&exchange.user_margin_accounts, user_address);
         primary_fungible_store::deposit(user_margin_account, usdc_tokens);
         
@@ -519,6 +639,7 @@ module options_exchange {
             id,
             asset_symbol,
             legs,
+            trader_address: @0x00000000000000000000000000000000,
             status: OrderStatus::OPEN,
             opening_quote: Quote {
                 net_debit: 0,   

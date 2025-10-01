@@ -5,9 +5,18 @@ module marketplace::options_exchange_tests {
     use std::string;
     use std::vector;
     use marketplace::options_exchange::{Self, Position, PositionLeg, Quote};
+    use aptos_framework::timestamp;
+    use aptos_framework::account;
+    use aptos_framework::fungible_asset;
+    use aptos_framework::primary_fungible_store;
+    use aptos_framework::object;
+    use marketplace::volatility_marketplace;
+    use marketplace::price_oracle;
+    use marketplace::isolated_margin_account;
     
     // Test constants - matches the scaling used in OptionsExchange
     const ONE_E18: u256 = 1000000000000000000; // 1e18 scaling factor
+    const ONE_E6: u64 = 1000000; // 1e6 scaling factor
     const ONE_DAY_SECONDS: u64 = 86400;
     const THIRTY_DAYS_SECONDS: u64 = 2592000;
     
@@ -315,5 +324,91 @@ module marketplace::options_exchange_tests {
         assert!(options_exchange::get_net_credit(&quote) > 0, E_PREMIUM_ZERO);
         assert!(options_exchange::get_net_debit(&quote) == 0, E_QUOTE_MISMATCH);
         assert!(options_exchange::get_initial_margin(&quote) > 0, E_MARGIN_TOO_LOW);
+    }
+
+    // ------------------------------------------------------------------------
+    // Tests for opening positions
+    // ------------------------------------------------------------------------
+
+
+    #[test(aptos_framework = @0x1, creator = @0x123, trader = @0x789)]
+    fun test_open_position(aptos_framework: &signer, creator: &signer, trader: &signer) {
+        // Initialize timestamp for testing
+        timestamp::set_time_has_started_for_testing(aptos_framework);
+        timestamp::update_global_time_for_test_secs(1000000);
+        
+        // create the golbal volatility marketplace
+        let marketplace_addr = volatility_marketplace::create_marketplace(creator);
+
+        // mint usdc to the trader
+        let trade_amount = 10000 * ONE_E6; // 10000 USDC
+        let trader_address = signer::address_of(trader);
+        volatility_marketplace::mint_test_usdc(trade_amount, trader_address, marketplace_addr);
+
+        // Create market
+        let asset_symbol = string::utf8(b"ETH");
+        let initial_volatility = (30 * ONE_E6) / 100; // 30%
+        let expiration_timestamp = timestamp::now_seconds() + 86400;
+        
+        let (market_id, market_address) = volatility_marketplace::create_market(
+            creator,
+            asset_symbol,
+            initial_volatility as u256,
+            expiration_timestamp,
+            marketplace_addr
+        );
+
+        // create the option exchange
+        let usdc_address = volatility_marketplace::get_usdc_address(marketplace_addr);
+        let exchange_address = options_exchange::create_exchange(creator, usdc_address);
+
+        // Set the quote price of ETH for testing
+        let eth_price = 1000 * ONE_E18;
+        price_oracle::set_mock_price(
+            creator, 
+            exchange_address, 
+            string::utf8(b"ETH"), 
+            eth_price);
+
+        // Set the quote price of Rates.US10Y for testing
+        let us10y_price = (5 * ONE_E18)/100; // 5%
+        price_oracle::set_mock_price(
+            creator, 
+            exchange_address, 
+            string::utf8(b"Rates.US10Y"), 
+            us10y_price);
+        
+        // Create a long call position
+        let current_time = timestamp::now_seconds();
+        let expiration = current_time + THIRTY_DAYS_SECONDS;
+        
+        let leg = options_exchange::create_position_leg(
+            options_exchange::create_call(),
+            options_exchange::create_long(),
+            1 * ONE_E18,    // 1 contract
+            eth_price,      // atm strike
+            expiration
+        );
+        
+        
+        let legs = vector::empty<PositionLeg>();
+        vector::push_back(&mut legs, leg);
+        
+        let position = options_exchange::create_position(
+            1,
+            string::utf8(b"ETH"),
+            legs
+        );
+
+        // Execute the trade to open the position
+        options_exchange::open_position(trader, marketplace_addr, exchange_address, position);
+        
+        // Get USDC metadata to check balances
+        let usdc_metadata = volatility_marketplace::get_test_usdc_metadata(marketplace_addr);
+        
+        // verify the position has been opened
+        let trader_ending_balance = primary_fungible_store::balance(trader_address, usdc_metadata);
+
+        assert!(trader_ending_balance < trade_amount, E_QUOTE_MISMATCH);
     }
 }
