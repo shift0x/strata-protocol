@@ -3,10 +3,17 @@ module options_exchange {
     use std::error;
     use std::signer;
     use std::debug;
-    use std::string::{Self, String};
     use std::vector;
     use std::table::{Self, Table};
+    use std::string::{Self, String};
+    use aptos_framework::timestamp;
+    use aptos_framework::object::{Self, Object};
+    use aptos_framework::primary_fungible_store::{Self};
+    use aptos_framework::fungible_asset::{Self, Metadata};
     use marketplace::binomial_option_pricing;
+    use marketplace::isolated_margin_account;
+    use marketplace::price_oracle;
+    use marketplace::volatility_marketplace;
 
     // ------------------------------------------------------------------------
     // Constants and errors
@@ -36,7 +43,7 @@ module options_exchange {
 
     enum OrderStatus has copy, drop, store {
         OPEN,
-        EXECUTED,
+        CLOSED,
         CANCELLED,
         EXPIRED,
     }
@@ -61,17 +68,7 @@ module options_exchange {
         // strike price expressed in the same base units as underlying_price
         strike_price: u256,
         // expiration timestamp (seconds since epoch)
-        expiration: u64,
-        // execution status and bookkeeping
-        status: OrderStatus,
-        // the price at which the position was opened
-        open_price: u64,
-        // the time at which the position was opened
-        open_timestamp: u64,
-        // the price at which the position was closed
-        close_price: u64,
-        // the time at which the position was closed
-        close_timestamp: u64,
+        expiration: u64
     }
 
     struct Position has store, drop, copy {
@@ -81,18 +78,15 @@ module options_exchange {
         asset_symbol: String,
         // the legs accociated with the position
         legs: vector<PositionLeg>,
+        // execution status and bookkeeping
+        status: OrderStatus,
+        // quote at the opening of the position
+        opening_quote: Quote,
+        // quote at the closing of the position
+        closing_quote: Quote,
     }
 
-    struct OptionsExchange has key {
-        // list of all user positions
-        user_positions: vector<Position>,
-        // mapping of users to their positions
-        user_position_lookup: Table<address, vector<u64>>,
-        // counter for positions created in the exchange
-        position_counter: u64,
-    }
-
-    struct Quote has store, drop {
+    struct Quote has store, drop, copy {
         // debit amount for the position
         net_debit: u256,
         // credit amount for the position
@@ -101,65 +95,40 @@ module options_exchange {
         initial_margin: u256,
         // maintenance margin for the position
         maintenance_margin: u256,
+        // the timestamp of the quote
+        timestamp: u64
     }
 
-    // ------------------------------------------------------------------------
-    // Public constructor functions for testing
-    // ------------------------------------------------------------------------
-    
-    public fun create_position_leg(
-        option_type: OptionType,
-        side: Side,
-        amount: u256,
-        strike_price: u256,
-        expiration: u64
-    ): PositionLeg {
-        PositionLeg {
-            option_type,
-            side,
-            amount,
-            strike_price,
-            expiration,
-            status: OrderStatus::OPEN,
-            open_price: 0,
-            open_timestamp: 0,
-            close_price: 0,
-            close_timestamp: 0,
-        }
+    struct MarginAccount has store, drop, copy {
+        // the total margin available to the user
+        total_margin: u256,
+        // the total margin used by the user
+        used_margin: u256,
     }
-    
-    public fun create_position(
-        id: u64,
-        asset_symbol: String,
-        legs: vector<PositionLeg>
-    ): Position {
-        Position {
-            id,
-            asset_symbol,
-            legs,
-        }
+
+    struct OptionsExchange has key {
+        // list of all user positions
+        user_positions: vector<Position>,
+        // mapping of users to their positions
+        user_position_lookup: Table<address, vector<u64>>,
+        // mapping of users to their margin accounts
+        user_margin_accounts: Table<address, address>,
+        // counter for positions created in the exchange
+        position_counter: u64,
+        // address of usdc token
+        usdc_address: address,
     }
-    
-    public fun create_call(): OptionType { OptionType::CALL }
-    public fun create_put(): OptionType { OptionType::PUT }
-    public fun create_long(): Side { Side::LONG }
-    public fun create_short(): Side { Side::SHORT }
-    
-    // Quote accessor functions
-    public fun get_net_debit(quote: &Quote): u256 { quote.net_debit }
-    public fun get_net_credit(quote: &Quote): u256 { quote.net_credit }
-    public fun get_initial_margin(quote: &Quote): u256 { quote.initial_margin }
-    public fun get_maintenance_margin(quote: &Quote): u256 { quote.maintenance_margin }
 
-    // ------------------------------------------------------------------------
-    // Exchange lifecycle (minimal)
-    // ------------------------------------------------------------------------
-
-    public fun create_exchange(owner: &signer) {
+    public fun create_exchange(
+        owner: &signer,
+        usdc_address: address
+    ) {
         let exchange = OptionsExchange { 
             user_positions: vector::empty<Position>(),
             user_position_lookup: table::new<address, vector<u64>>(),
+            user_margin_accounts: table::new<address, address>(),
             position_counter: 0,
+            usdc_address,
         };
 
         move_to<OptionsExchange>(owner, exchange);
@@ -167,6 +136,7 @@ module options_exchange {
 
     public fun open_position(
         user: &signer,
+        marketplace_address: address,
         exchange_address: address,
         position: Position
     ) acquires OptionsExchange {
@@ -185,17 +155,72 @@ module options_exchange {
         
         // update the position counter
         exchange.position_counter = exchange.position_counter + 1;
+
+        // execute the trade
+        execute_open_position(user, &mut position, marketplace_address, exchange);
+
     }
+
+
+    fun execute_open_position(
+        user: &signer,
+        position: &mut Position,
+        marketplace_address: address,
+        exchange: &mut OptionsExchange
+    ) {
+        // get the current IV from the volatility marketplace
+        let volatility_bps = volatility_marketplace::get_implied_volatility(
+            marketplace_address, 
+            position.asset_symbol
+        );
+
+        // get the underlying price from the oracle
+        let underlying_price = price_oracle::get_price(marketplace_address, position.asset_symbol);
+
+        // get the risk free rate from the oracle
+        let risk_free_rate_bps = price_oracle::get_price(marketplace_address, string::utf8(b"Rates.US10Y"));
+
+        // quote the position to determine net debit and margin amounts
+        position.opening_quote = price_position(
+            position, 
+            underlying_price as u256, 
+            risk_free_rate_bps as u256, 
+            volatility_bps as u256, 
+            timestamp::now_seconds()
+        );
+
+        // determine the amount required to open the position
+        let net_user_amount_in = position.opening_quote.net_debit + 
+            position.opening_quote.initial_margin - 
+            position.opening_quote.net_credit;
+
+        // transfer usdc to the user margin account
+        let user_address = signer::address_of(user);
+        let usdc_metadata = object::address_to_object<Metadata>(exchange.usdc_address);
+        let usdc_tokens = primary_fungible_store::withdraw(user, usdc_metadata, net_user_amount_in as u64);
+        let user_margin_account = *table::borrow(&exchange.user_margin_accounts, user_address);
+        primary_fungible_store::deposit(user_margin_account, usdc_tokens);
+        
+        // update the position status
+        position.status = OrderStatus::OPEN;
+    }
+
 
     fun ensure_user_created(
         user_address: address,
         exchange: &mut OptionsExchange
     ) {
         if (!table::contains<address, vector<u64>>(&exchange.user_position_lookup, user_address)) {
+            // create the user position list
             let empty: vector<u64> = vector::empty<u64>();
             table::add(&mut exchange.user_position_lookup, user_address, empty);
+
+            // create the user margin account
+            let margin_account = isolated_margin_account::new(user_address);
+            table::add(&mut exchange.user_margin_accounts, user_address, margin_account);
         };
     }
+
 
     // ------------------------------------------------------------------------
     // Quoting (premium) and margin
@@ -282,6 +307,7 @@ module options_exchange {
             net_credit: net_credit_u256,
             initial_margin: initial_margin_u256,
             maintenance_margin: maintenance_margin_u256,
+            timestamp: current_time_secs
         }
     }
 
@@ -463,5 +489,63 @@ module options_exchange {
     fun mul_div_u256(a: u256, b: u256, denom: u256): u256 {
         (a * b) / denom
     }
+
+    // ------------------------------------------------------------------------
+    // Public constructor functions for testing
+    // ------------------------------------------------------------------------
+    
+    public fun create_position_leg(
+        option_type: OptionType,
+        side: Side,
+        amount: u256,
+        strike_price: u256,
+        expiration: u64
+    ): PositionLeg {
+        PositionLeg {
+            option_type,
+            side,
+            amount,
+            strike_price,
+            expiration
+        }
+    }
+    
+    public fun create_position(
+        id: u64,
+        asset_symbol: String,
+        legs: vector<PositionLeg>
+    ): Position {
+        Position {
+            id,
+            asset_symbol,
+            legs,
+            status: OrderStatus::OPEN,
+            opening_quote: Quote {
+                net_debit: 0,   
+                net_credit: 0,
+                initial_margin: 0,  
+                maintenance_margin: 0,
+                timestamp: 0,
+            },
+            closing_quote: Quote {
+                net_debit: 0,   
+                net_credit: 0,
+                initial_margin: 0,  
+                maintenance_margin: 0,
+                timestamp: 0,
+            }
+        }
+    }
+    
+    public fun create_call(): OptionType { OptionType::CALL }
+    public fun create_put(): OptionType { OptionType::PUT }
+    public fun create_long(): Side { Side::LONG }
+    public fun create_short(): Side { Side::SHORT }
+    
+    // Quote accessor functions
+    public fun get_net_debit(quote: &Quote): u256 { quote.net_debit }
+    public fun get_net_credit(quote: &Quote): u256 { quote.net_credit }
+    public fun get_initial_margin(quote: &Quote): u256 { quote.initial_margin }
+    public fun get_maintenance_margin(quote: &Quote): u256 { quote.maintenance_margin }
 }
 }
