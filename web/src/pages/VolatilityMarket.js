@@ -160,11 +160,15 @@ function VolatilityMarket() {
                 Oracle: Pyth - Healthy
               </span>
             </div>
-          </div>
         </div>
-        <h1 className="page-header">{currentMarket.pair} Volatility Market</h1>
+      </div>
+      <h1 className="page-header">{currentMarket.pair} Volatility Prediction Market</h1>
+      <p className="hero-subtitle wide">
+        Trade predictions on {currentMarket.pair}'s 30-day realized volatility. Go long if you expect higher volatility, short if you expect lower. 
+        Markets settle to the actual realized volatility measured over the settlement period using Pyth oracle price data.
+      </p>
 
-        {/* Main content area with chart and trade panel */}
+      {/* Main content area with chart and trade panel */}
         <div className="main-content-grid">
           {/* Chart Section */}
           <div className="chart-section">

@@ -203,3 +203,7 @@ h1, h2, h3, h4, h5, h6 {
   line-height: 1.2;
   margin-top: 0;
 }
+
+.hero-subtitle.wide {
+  max-width: 100%;
+}
