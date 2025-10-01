@@ -23,6 +23,11 @@ h1, h2, h3, h4, h5, h6 {
   margin: 0 auto;
 }
 
+.internal-page-content {
+  padding: 2rem 3rem;
+  margin: 0 auto;
+}
+
 /* Navbar Styles */
 .navbar {
   position: fixed;
@@ -47,9 +52,48 @@ h1, h2, h3, h4, h5, h6 {
   align-items: center;
 }
 
+.navbar-logo a {
+  display: flex;
+  align-items: center;
+}
+
 .logo-image {
   height: 30px;
   width: auto;
+}
+
+.navbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
+.nav-link {
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 400;
+  padding: 0.5rem 0;
+  position: relative;
+  transition: color 0.2s ease;
+}
+
+.nav-link:hover {
+  color: #cccccc;
+}
+
+.nav-link.active {
+  color: #ffffff;
+}
+
+.nav-link.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background-color: #ffffff;
 }
 
 .enter-app-btn {
@@ -79,10 +123,18 @@ h1, h2, h3, h4, h5, h6 {
   padding-top: 6rem;
 }
 
+.internal-page-content {
+  padding-top: 6rem;
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
   .navbar-content {
     padding: 1rem;
+  }
+  
+  .navbar-nav {
+    display: none;
   }
   
   .main-content {
@@ -90,10 +142,64 @@ h1, h2, h3, h4, h5, h6 {
     padding-top: 5rem;
   }
   
-
+  .internal-page-content {
+    padding: 1rem;
+    padding-top: 5rem;
+  }
   
   .enter-app-btn {
     font-size: 0.8125rem;
     padding: 0.4rem 0.8rem;
   }
+}
+
+
+@media (max-width: 768px) {
+  .hero-section {
+    padding: 2rem 0 4rem;
+  }
+  
+  .hero-title {
+    font-size: 2.5rem;
+  }
+  
+  .hero-subtitle {
+    font-size: 1rem;
+  }
+  
+  .featured-container {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .stats-panel {
+    min-width: auto;
+  }
+  
+  .modules-container {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .hero-cta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  
+  .cta-primary,
+  .cta-secondary {
+    width: 100%;
+    text-align: center;
+  }
+}
+
+/* Page header */
+.page-header {
+  font-size: 2.5rem;
+  font-weight: 500;
+  color: #ffffff;
+  margin-bottom: 1.5rem;
+  line-height: 1.2;
+  margin-top: 0;
 }

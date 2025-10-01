@@ -1,4 +1,6 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
+
 import './HomePage.css';
 
 function Home() {
@@ -6,15 +8,18 @@ function Home() {
     <main className="main-content">
       <div className="hero-section">
         <h1 className="hero-title">
-          On-chain option<br />
-          <span className="hero-title-secondary">money legos</span>
+          Trustless On-Chain Options<br />
+          <span className="hero-title-secondary">& Volatility Markets</span>
         </h1>
         <p className="hero-subtitle">
           Trade volatility, hedge risk, and build advanced financial products with trustless option markets on Aptos
         </p>
         
         <div className="hero-cta">
-          <button className="cta-primary">Enter App</button>
+          <Link to="/markets">
+            <button className="cta-primary">Enter App</button>
+          </Link>
+          
           <button className="cta-secondary">Developer Documentation</button>
         </div>
       </div>
