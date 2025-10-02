@@ -58,6 +58,20 @@ module price_oracle {
         table::add(&mut oracle.asset_mock_price_lookup, asset_symbol, mock_price);
     }
 
+    public fun store_price_identifier(
+        sender: &signer,
+        oracle_address: address,
+        symbol: string::String,
+        identifier: vector<u8>
+    ) acquires PriceOracle {
+        let oracle = borrow_global_mut<PriceOracle>(oracle_address);
+        let sender_address = signer::address_of(sender);
+
+        assert!(sender_address == oracle.owner, E_ONLY_OWNER);
+
+        table::add(&mut oracle.pyth_price_identifier_lookup, symbol, identifier);
+    }
+
     // use the pyth price identifier to get the price of an asset
     // if a mock price exists, then return that instead
     public fun get_price(
