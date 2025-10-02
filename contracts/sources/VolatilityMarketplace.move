@@ -29,6 +29,16 @@ module volatility_marketplace {
         transfer_ref: TransferRef,
     }
 
+    // Market metadata
+    struct MarketMetadata has drop {
+        // market address
+        market_address: address,
+        // market symbol
+        symbol: string::String,
+        // market expiration
+        expiration: u64
+    }
+
     // Centralized marketplace resource
     struct Marketplace has key {
         // Owner of the marketplace
@@ -48,7 +58,7 @@ module volatility_marketplace {
         // Staking vault address
         staking_vault_address: address,
         // The address of usdc token
-        usdc_address: address
+        usdc_address: address,
     }
 
     // Helper function to convert u64 to decimal string
@@ -237,7 +247,6 @@ module volatility_marketplace {
         primary_fungible_store::deposit(to, tokens);
     }
 
-    // Get TestUSDC metadata for external use
     #[view]
     public fun get_test_usdc_metadata(marketplace_address: address): Object<Metadata> acquires Marketplace {
         let marketplace = borrow_global<Marketplace>(marketplace_address);
@@ -299,6 +308,46 @@ module volatility_marketplace {
         let marketplace = borrow_global<Marketplace>(marketplace_address);
         
         marketplace.usdc_address
+    }
+
+    #[view]
+    public fun get_active_markets(
+        marketplace_address: address,
+        symbols: vector<string::String>
+    ) : vector<MarketMetadata> acquires Marketplace {
+        let marketplace = borrow_global<Marketplace>(marketplace_address);
+        let markets = vector::empty<MarketMetadata>();
+
+        let i = 0;
+        let symbols_len = vector::length(&symbols);
+        
+        while (i < symbols_len) {
+            let symbol = *vector::borrow(&symbols, i);
+            
+            if (table::contains(&marketplace.active_markets_by_asset, symbol)) {
+                let active_market_addresses = table::borrow(&marketplace.active_markets_by_asset, symbol);
+                let j = 0;
+                let markets_len = vector::length(active_market_addresses);
+                
+                while (j < markets_len) {
+                    let market_address = *vector::borrow(active_market_addresses, j);
+                    let expiration = implied_volatility_market::get_expiration(market_address);
+
+                    let metadata = MarketMetadata {
+                        market_address,
+                        symbol,
+                        expiration
+                    };
+
+                    vector::push_back(&mut markets, metadata);
+                    j = j + 1;
+                };
+            };
+            
+            i = i + 1;
+        };
+
+        markets
     }
 }
 }

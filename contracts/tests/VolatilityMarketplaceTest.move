@@ -3,6 +3,7 @@ module marketplace::volatility_marketplace_test {
     use std::string;
     use std::signer;
     use std::debug;
+    use std::vector::{Self};
     use aptos_framework::timestamp;
     use marketplace::volatility_marketplace;
 
@@ -52,5 +53,50 @@ module marketplace::volatility_marketplace_test {
         let implied_vol_avg = volatility_marketplace::get_implied_volatility(marketplace_addr, asset_symbol);
         let expected_vol_30 = 30 * ONE_E12 * ONE_E6;
         assert!(implied_vol_avg == expected_vol_30, 2);
+    }
+
+     #[test(creator = @0x123, framework = @aptos_framework)]
+    fun test_get_active_markets(creator: signer, framework: signer) {
+        // Setup test environment
+        timestamp::set_time_has_started_for_testing(&framework);
+
+        // Create marketplace
+        volatility_marketplace::create_marketplace(&creator);
+        let marketplace_addr = signer::address_of(&creator);
+        
+        // Test parameters
+        let asset_symbol = string::utf8(b"BTC");
+        let asset_symbol_2 = string::utf8(b"ETH");
+        let expiration_timestamp = timestamp::now_seconds() + 86400; // 1 day from now
+        
+        // Create first market
+        let volatility_25 = 25 * ONE_E6;
+        let (market_id_1, market_addr_1) = volatility_marketplace::create_market(
+            &creator,
+            asset_symbol,
+            volatility_25,
+            expiration_timestamp,
+            marketplace_addr
+        );
+        
+        // Create second market 
+        let expiration_timestamp_2 = timestamp::now_seconds() + 172800; // 2 days from now
+        let (market_id_2, market_addr_2) = volatility_marketplace::create_market(
+            &creator,
+            asset_symbol,
+            35 * ONE_E6,
+            expiration_timestamp_2,
+            marketplace_addr
+        );
+        
+        // Get the list of active markets
+        let symbols = vector::empty<string::String>();
+        vector::push_back(&mut symbols, asset_symbol);
+        vector::push_back(&mut symbols, asset_symbol_2);
+
+        let active_markets = volatility_marketplace::get_active_markets(marketplace_addr, symbols);
+        let active_market_count = vector::length(&active_markets);
+
+        assert!(active_market_count == 2, 1);
     }
 }
