@@ -1,9 +1,14 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { WalletSelector } from "@aptos-labs/wallet-adapter-ant-design";
+import { useWallet } from "@aptos-labs/wallet-adapter-react";
+import "@aptos-labs/wallet-adapter-ant-design/dist/index.css";
+import './Navbar.css';
 
 function Navbar() {
   const location = useLocation();
   const isHomePage = location.pathname === '/';
+  const { connected } = useWallet();
 
   return (
     <nav className="navbar">
@@ -31,9 +36,17 @@ function Navbar() {
           </div>
         )}
         
-        <button className="enter-app-btn">
-          Enter App →
-        </button>
+        {isHomePage ? (
+          <Link to="/markets">
+            <button className="enter-app-btn">
+              Enter App →
+            </button>
+          </Link>
+        ) : (
+          <div className={`wallet-selector-container ${!connected ? 'disconnected' : ''}`}>
+            <WalletSelector />
+          </div>
+        )}
       </div>
     </nav>
   );

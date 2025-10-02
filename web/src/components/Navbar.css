@@ -1,0 +1,227 @@
+/* Wallet Selector Styles */
+.wallet-selector-modal {
+  background-color: rgba(10, 10, 10, 0.95) !important;
+  backdrop-filter: blur(10px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.wallet-selector-icon {
+  filter: invert(1) !important;
+}
+
+.wallet-selector-text {
+  color: #ffffff !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif !important;
+  font-size: 0.8125rem !important;
+  font-weight: 400 !important;
+}
+
+.wallet-menu-wrapper {
+  background-color: #1a1a1a !important;
+  border: 1px solid #2a2a2a !important;
+  border-radius: 4px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+.wallet-name-wrapper {
+  color: #ffffff !important;
+  font-size: 0.8125rem !important;
+  font-weight: 400 !important;
+}
+
+.wallet-button {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif !important;
+  font-size: 0.875rem !important;
+  padding: 0.5rem .875rem !important;
+  border-radius: 4px !important;
+  margin-bottom: none !important;
+  transition: all 0.2s ease !important;
+  box-shadow: none;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  color: #ffffff;
+}
+
+.wallet-connect-button {
+  padding: 0.5rem .875rem !important;
+}
+
+.wallet-selector-container.disconnected .wallet-button {
+  background: #2d1b0e !important;
+  border: 1px solid #d97706 !important;
+  color: #f59e0b !important;
+  box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.3) !important;
+}
+
+.wallet-connect-install {
+  background: #1a1a1a !important;
+  border: 1px solid #2a2a2a !important;
+  color: #cccccc !important;
+  font-size: 0.75rem !important;
+  padding: 0.375rem 0.75rem !important;
+  border-radius: 4px !important;
+}
+
+.wallet-button:hover {
+  background: #1a1a1a !important;
+  border-color: #3a3a3a !important;
+}
+
+.wallet-modal-title {
+  color: #ffffff !important;
+  font-size: 1.25rem !important;
+  font-weight: 500 !important;
+  margin-bottom: 1rem !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif !important;
+}
+
+.aptos-connect-button {
+  background: #1a1a1a !important;
+  border: 1px solid #2a2a2a !important;
+  color: #ffffff !important;
+  border-radius: 4px !important;
+  padding: 0.75rem 1rem !important;
+  transition: all 0.2s ease !important;
+}
+
+.aptos-connect-button:hover {
+  background: #2a2a2a !important;
+  border-color: #3a3a3a !important;
+}
+
+.aptos-connect-privacy-policy-wrapper {
+  background-color: rgba(26, 26, 26, 0.8) !important;
+  border-top: 1px solid #2a2a2a !important;
+  padding: 1rem !important;
+}
+
+.aptos-connect-privacy-policy-text {
+  color: #cccccc !important;
+  font-size: 0.75rem !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif !important;
+}
+
+.aptos-connect-privacy-policy-link {
+  color: #ffffff !important;
+  text-decoration: underline !important;
+}
+
+.aptos-connect-privacy-policy-link:hover {
+  color: #cccccc !important;
+}
+
+.aptos-connect-powered-by {
+  color: #888888 !important;
+  font-size: 0.7rem !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif !important;
+}
+
+.about-aptos-connect-trigger-wrapper {
+  background: transparent !important;
+  border: none !important;
+  padding: 0.25rem !important;
+}
+
+.about-aptos-connect-trigger {
+  color: #cccccc !important;
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+  font-size: 0.75rem !important;
+  text-decoration: underline !important;
+}
+
+.about-aptos-connect-trigger:hover {
+  color: #ffffff !important;
+}
+
+.about-aptos-connect-header {
+  background-color: #1a1a1a !important;
+  border-bottom: 1px solid #2a2a2a !important;
+  color: #ffffff !important;
+  padding: 1rem !important;
+}
+
+.about-aptos-connect-graphic-wrapper {
+  background-color: #0a0a0a !important;
+  padding: 2rem !important;
+}
+
+.about-aptos-connect-text-wrapper {
+  background-color: #1a1a1a !important;
+  padding: 1.5rem !important;
+}
+
+.about-aptos-connect-title {
+  color: #ffffff !important;
+  font-size: 1.125rem !important;
+  font-weight: 500 !important;
+  margin-bottom: 0.75rem !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif !important;
+}
+
+.about-aptos-connect-description {
+  color: #cccccc !important;
+  font-size: 0.875rem !important;
+  line-height: 1.5 !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif !important;
+}
+
+.about-aptos-connect-footer-wrapper {
+  background-color: #1a1a1a !important;
+  border-top: 1px solid #2a2a2a !important;
+  padding: 1rem !important;
+}
+
+.about-aptos-connect-screen-indicators-wrapper {
+  display: flex !important;
+  justify-content: center !important;
+  gap: 0.5rem !important;
+  padding: 0.5rem !important;
+}
+
+.about-aptos-connect-screen-indicator {
+  width: 6px !important;
+  height: 6px !important;
+  border-radius: 50% !important;
+  background-color: #555555 !important;
+  transition: background-color 0.2s ease !important;
+}
+
+.about-aptos-connect-screen-indicator.active {
+  background-color: #ffffff !important;
+}
+
+/* Ensure wallet selector fits with navbar styling */
+.wallet-selector-modal .ant-modal-content {
+  background-color: #1a1a1a !important;
+  border: 1px solid #2a2a2a !important;
+  border-radius: 4px !important;
+}
+
+.wallet-selector-modal .ant-modal-header {
+  background-color: #1a1a1a !important;
+  border-bottom: 1px solid #2a2a2a !important;
+}
+
+.wallet-selector-modal .ant-modal-body {
+  background-color: #1a1a1a !important;
+  color: #ffffff !important;
+}
+
+.wallet-selector-modal .ant-modal-footer {
+  background-color: #1a1a1a !important;
+  border-top: 1px solid #2a2a2a !important;
+}
+
+/* Override any default ant design styles that might interfere */
+.wallet-selector-modal .ant-btn-primary {
+  background: #1a1a1a !important;
+  border-color: #2a2a2a !important;
+  color: #ffffff !important;
+}
+
+.wallet-selector-modal .ant-btn-primary:hover {
+  background: #2a2a2a !important;
+  border-color: #3a3a3a !important;
+}
