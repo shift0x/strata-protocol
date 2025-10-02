@@ -157,9 +157,9 @@ module options_exchange {
         let user_addr = signer::address_of(user);
 
         // ensure the position exists
-        assert!(position_id < exchange.position_counter, E_POSITION_NOT_FOUND);
+        assert!(position_id <= exchange.position_counter, E_POSITION_NOT_FOUND);
 
-        let position = exchange.user_positions[position_id];
+        let position = exchange.user_positions[position_id-1];
 
         // ensure the position is open
         assert!(position.status == OrderStatus::OPEN, E_POSITION_NOT_OPEN);
@@ -185,10 +185,8 @@ module options_exchange {
         ensure_user_created(user_addr, exchange);
 
         // create the user position
-        position.id = exchange.position_counter;
+        position.id = exchange.position_counter + 1;
         position.trader_address = user_addr;
-
-        vector::push_back(&mut exchange.user_positions, position);
 
         let user_positions_ref = table::borrow_mut<address, vector<u64>>(&mut exchange.user_position_lookup, user_addr);
         vector::push_back(user_positions_ref, position.id);
@@ -198,6 +196,8 @@ module options_exchange {
 
         // execute the trade
         execute_open_position(user, &mut position, marketplace_address, exchange);
+
+        vector::push_back(&mut exchange.user_positions, position);
     }
 
     fun get_quote_for_position(
@@ -263,16 +263,33 @@ module options_exchange {
         let transfer_amount_to_trader = initial_trader_deposit;
         let user_margin_account = *table::borrow(&exchange.user_margin_accounts, trader_address);
 
-        if(profit > 0){ // then transfer the profit amount from the vault to the margin account
+        // setup vars for transfer
+        let margin_account_signer = isolated_margin_account::get_signer(user_margin_account);
+        let usdc_metadata = object::address_to_object<Metadata>(exchange.usdc_address);
+        let staking_vault_address = volatility_marketplace::get_staking_vault_address(marketplace_address); 
+
+        if(profit > 0){ // transfer the profit amount from the vault to the margin account
             let profit_64 = (profit / ONE_E12) as u64;
 
             staking_vault::withdraw_from_vault(
-                marketplace_address, 
+                staking_vault_address, 
                 user_margin_account, 
                 profit_64);
 
             transfer_amount_to_trader = transfer_amount_to_trader + profit;
         } else if(loss > 0){ // transfer the loss from the margin account to the vault
+            let loss_64 = (loss / ONE_E12) as u64;
+            let usdc_tokens = primary_fungible_store::withdraw(
+                &margin_account_signer, 
+                usdc_metadata, 
+                loss_64);
+            
+            primary_fungible_store::deposit(staking_vault_address, usdc_tokens); 
+
+            // record the profit by the vault
+            staking_vault::volatility_market_profit(staking_vault_address, loss_64);
+
+            // reduce the trader output by the position loss amount
             if(loss > transfer_amount_to_trader){
                 transfer_amount_to_trader = 0;
             } else {
@@ -282,8 +299,6 @@ module options_exchange {
 
         if(transfer_amount_to_trader > 0){
             let transfer_amount_trader_64 = (transfer_amount_to_trader / ONE_E12) as u64;
-            let margin_account_signer = isolated_margin_account::get_signer(user_margin_account);
-            let usdc_metadata = object::address_to_object<Metadata>(exchange.usdc_address);
             let usdc_tokens = primary_fungible_store::withdraw(
                 &margin_account_signer, 
                 usdc_metadata, 
@@ -341,6 +356,79 @@ module options_exchange {
         };
     }
 
+    #[view]
+    public fun get_user_positions(
+        exchange_address: address,
+        user_address: address
+    ) : vector<Position> acquires OptionsExchange {
+        let exchange = borrow_global<OptionsExchange>(exchange_address);
+        let position_ids = *table::borrow(&exchange.user_position_lookup, user_address);
+        let result = vector::empty<Position>();
+        
+        vector::for_each(position_ids, |position_id| {
+            let position = exchange.user_positions[position_id-1];
+            vector::push_back(&mut result, position);
+        });
+
+        result
+    }
+
+    // ------------------------------------------------------------------------
+    // Position Getters
+    // ------------------------------------------------------------------------
+
+    public fun get_position_id(position: &Position): u64 {
+        position.id
+    }
+
+    public fun get_position_opening_debit(position: &Position): u256 {
+        position.opening_quote.net_debit
+    }
+
+    public fun get_position_trader_address(position: &Position): address {
+        position.trader_address
+    }
+
+    public fun get_position_asset_symbol(position: &Position): String {
+        position.asset_symbol
+    }
+
+    public fun get_position_legs(position: &Position): vector<PositionLeg> {
+        position.legs
+    }
+
+    public fun is_position_open(position: &Position): bool {
+        position.status == OrderStatus::OPEN
+    }
+
+    public fun get_position_opening_quote(position: &Position): Quote {
+        position.opening_quote
+    }
+
+    public fun get_position_closing_quote(position: &Position): Quote {
+        position.closing_quote
+    }
+
+    // PositionLeg getters
+    public fun get_position_leg_option_type(leg: &PositionLeg): OptionType {
+        leg.option_type
+    }
+
+    public fun get_position_leg_side(leg: &PositionLeg): Side {
+        leg.side
+    }
+
+    public fun get_position_leg_amount(leg: &PositionLeg): u256 {
+        leg.amount
+    }
+
+    public fun get_position_leg_strike_price(leg: &PositionLeg): u256 {
+        leg.strike_price
+    }
+
+    public fun get_position_leg_expiration(leg: &PositionLeg): u64 {
+        leg.expiration
+    }
 
     // ------------------------------------------------------------------------
     // Quoting (premium) and margin

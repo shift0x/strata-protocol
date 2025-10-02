@@ -35,6 +35,8 @@ module staking_vault {
         usdc_loan_amount: u64,
         // the amount of USDC that has been staked (will differ from token balance because of loans)
         usdc_staked_amount: u64,
+        // the amount of USDC owned by the vault, includes staked amount and earnings / loss from fees and trading
+        usdc_claimable_amount: u64,
         // staking balances by user
         staking_balances: table::Table<address, u64>,
         // the amount of swap fees earned by the staking pool
@@ -66,6 +68,7 @@ module staking_vault {
             usdc_address,
             usdc_loan_amount: 0,
             usdc_staked_amount: 0,
+            usdc_claimable_amount: 0,
             staking_balances: table::new(),
             swap_fees_earned: 0,
             lending_fees_earned: 0,
@@ -95,7 +98,7 @@ module staking_vault {
         primary_fungible_store::deposit(destination_address, usdc_tokens); 
 
         // reduce the staking balance USDC (vault recording a loss)
-        vault.usdc_staked_amount = vault.usdc_staked_amount - amount;
+        vault.usdc_claimable_amount = vault.usdc_claimable_amount - amount;
     }
 
     public(friend) fun borrow_on_margin(
@@ -123,7 +126,7 @@ module staking_vault {
         primary_fungible_store::deposit(vault_address, borrow_usdc_tokens);
 
         // update the staked balance to reflect the collected transaction fees
-        vault.usdc_staked_amount = vault.usdc_staked_amount + borrow_fee;
+        vault.usdc_claimable_amount = vault.usdc_claimable_amount + borrow_fee;
 
         // update the transaction fees collected from the borrow
         vault.lending_fees_earned = vault.lending_fees_earned + borrow_fee;
@@ -136,7 +139,7 @@ module staking_vault {
         let vault = borrow_global_mut<Vault>(vault_address);
 
         vault.swap_fees_earned = vault.swap_fees_earned + amount;
-        vault.usdc_staked_amount = vault.usdc_staked_amount + amount;
+        vault.usdc_claimable_amount = vault.usdc_claimable_amount + amount;
     }
 
     public(friend) fun volatility_market_profit(
@@ -145,7 +148,7 @@ module staking_vault {
     ) acquires Vault {
         let vault = borrow_global_mut<Vault>(vault_address);
 
-        vault.usdc_staked_amount = vault.usdc_staked_amount + amount;
+        vault.usdc_claimable_amount = vault.usdc_claimable_amount + amount;
     }
 
     // stake the amount of user tokens with the vault
@@ -163,6 +166,7 @@ module staking_vault {
 
         // update the vault staked amount
         vault.usdc_staked_amount = vault.usdc_staked_amount + amount;
+        vault.usdc_claimable_amount = vault.usdc_claimable_amount + amount;
 
         // increment the users staking balance
         let owner_addr = signer::address_of(owner);
@@ -206,7 +210,8 @@ module staking_vault {
         *current_balance = *current_balance - amount;
 
         // updated the vault staked amount
-        vault.usdc_staked_amount = vault.usdc_staked_amount - amount_to_transfer;
+        vault.usdc_staked_amount = vault.usdc_staked_amount - amount;
+        vault.usdc_claimable_amount = vault.usdc_claimable_amount - amount_to_transfer;
     }
 
 
@@ -248,7 +253,7 @@ module staking_vault {
             let factor = 1000000; //10^6
             let staked_percentage = (amount * factor) / vault.usdc_staked_amount;
             
-            (vault.usdc_staked_amount * staked_percentage) / factor
+            (vault.usdc_claimable_amount * staked_percentage) / factor
         }
         
     }
@@ -262,7 +267,7 @@ module staking_vault {
         let vault = borrow_global<Vault>(vault_address);
         let factor = 1000000 as u256; //10^6
 
-        let usdc_staked_amount_big = vault.usdc_staked_amount as u256;
+        let usdc_staked_amount_big = vault.usdc_claimable_amount as u256;
         let max_borrow_percentage_big = vault.max_borrow_percentage as u256;
         let max_borrow = (usdc_staked_amount_big * max_borrow_percentage_big) / factor;
 
