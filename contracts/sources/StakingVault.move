@@ -12,6 +12,7 @@ module staking_vault {
     use aptos_framework::object::{Self, Object, ExtendRef};
     use aptos_framework::fungible_asset::{Self, Metadata, MintRef, BurnRef, TransferRef};
     use aptos_framework::primary_fungible_store::{Self};
+    use aptos_framework::event;
     use marketplace::volatility_marketplace::{Self};
     use marketplace::implied_volatility_market::{Self};
     use marketplace::options_exchange::{Self};
@@ -19,6 +20,58 @@ module staking_vault {
     // Error codes
     const E_INSUFFICIENT_BALANCE: u64 = 1;
     const E_BORROW_OVER_CAP: u64 = 2;
+
+    // Events
+    #[event]
+    struct VaultCreated has drop, store {
+        vault_address: address,
+        creator: address,
+        usdc_address: address,
+        max_borrow_percentage: u64,
+        borrow_fee: u64,
+    }
+
+    #[event]
+    struct Staked has drop, store {
+        vault_address: address,
+        user: address,
+        amount: u64,
+        total_staked_amount: u64,
+        user_balance: u64,
+    }
+
+    #[event]
+    struct Unstaked has drop, store {
+        vault_address: address,
+        user: address,
+        amount_requested: u64,
+        amount_received: u64,
+        remaining_balance: u64,
+        total_staked_amount: u64,
+    }
+
+    #[event]
+    struct MarginBorrowed has drop, store {
+        vault_address: address,
+        borrower: address,
+        liquidity_pool_address: address,
+        amount: u64,
+        borrow_fee: u64,
+    }
+
+    #[event]
+    struct SwapFeesCollected has drop, store {
+        vault_address: address,
+        amount: u64,
+        total_swap_fees: u64,
+    }
+
+    #[event]
+    struct VolatilityMarketProfit has drop, store {
+        vault_address: address,
+        amount: u64,
+        total_claimable_amount: u64,
+    }
 
     friend marketplace::volatility_marketplace;
     friend marketplace::implied_volatility_market;
@@ -80,6 +133,15 @@ module staking_vault {
         move_to(&object_signer, vault);
         move_to(&object_signer, AccountRefs { extend_ref });
 
+        // Emit vault created event
+        event::emit(VaultCreated {
+            vault_address: object_addr,
+            creator: creator_addr,
+            usdc_address,
+            max_borrow_percentage,
+            borrow_fee: 40000,
+        });
+
         object_addr
     }
 
@@ -130,6 +192,16 @@ module staking_vault {
 
         // update the transaction fees collected from the borrow
         vault.lending_fees_earned = vault.lending_fees_earned + borrow_fee;
+
+        // Emit margin borrowed event
+        let borrower_addr = signer::address_of(borrow_margin_account);
+        event::emit(MarginBorrowed {
+            vault_address,
+            borrower: borrower_addr,
+            liquidity_pool_address,
+            amount,
+            borrow_fee,
+        });
     }
 
     public(friend) fun swap_fees_collected(
@@ -140,6 +212,13 @@ module staking_vault {
 
         vault.swap_fees_earned = vault.swap_fees_earned + amount;
         vault.usdc_claimable_amount = vault.usdc_claimable_amount + amount;
+
+        // Emit swap fees collected event
+        event::emit(SwapFeesCollected {
+            vault_address,
+            amount,
+            total_swap_fees: vault.swap_fees_earned,
+        });
     }
 
     public(friend) fun volatility_market_profit(
@@ -149,6 +228,13 @@ module staking_vault {
         let vault = borrow_global_mut<Vault>(vault_address);
 
         vault.usdc_claimable_amount = vault.usdc_claimable_amount + amount;
+
+        // Emit volatility market profit event
+        event::emit(VolatilityMarketProfit {
+            vault_address,
+            amount,
+            total_claimable_amount: vault.usdc_claimable_amount,
+        });
     }
 
     // stake the amount of user tokens with the vault
@@ -170,12 +256,23 @@ module staking_vault {
 
         // increment the users staking balance
         let owner_addr = signer::address_of(owner);
-        if (table::contains(&vault.staking_balances, owner_addr)) {
+        let user_balance = if (table::contains(&vault.staking_balances, owner_addr)) {
             let current_balance = table::borrow_mut(&mut vault.staking_balances, owner_addr);
             *current_balance = *current_balance + amount;
+            *current_balance
         } else {
             table::add(&mut vault.staking_balances, owner_addr, amount);
+            amount
         };
+
+        // Emit staked event
+        event::emit(Staked {
+            vault_address,
+            user: owner_addr,
+            amount,
+            total_staked_amount: vault.usdc_staked_amount,
+            user_balance,
+        });
     }
 
     // unstake a given amount from the user balance. Reverts if the user does not have
@@ -208,10 +305,21 @@ module staking_vault {
         // update the users current balance
         let current_balance = table::borrow_mut(&mut vault.staking_balances, owner_addr);
         *current_balance = *current_balance - amount;
+        let remaining_balance = *current_balance;
 
         // updated the vault staked amount
         vault.usdc_staked_amount = vault.usdc_staked_amount - amount;
         vault.usdc_claimable_amount = vault.usdc_claimable_amount - amount_to_transfer;
+
+        // Emit unstaked event
+        event::emit(Unstaked {
+            vault_address,
+            user: owner_addr,
+            amount_requested: amount,
+            amount_received: amount_to_transfer,
+            remaining_balance,
+            total_staked_amount: vault.usdc_staked_amount,
+        });
     }
 
 

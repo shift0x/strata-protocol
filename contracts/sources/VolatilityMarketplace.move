@@ -12,6 +12,7 @@ module volatility_marketplace {
     use aptos_framework::object::{Self, Object};
     use aptos_framework::fungible_asset::{Self, Metadata, MintRef, TransferRef};
     use aptos_framework::primary_fungible_store::{Self};
+    use aptos_framework::event;
     use marketplace::implied_volatility_market::{Self};
     use marketplace::staking_vault::{Self};
 
@@ -22,6 +23,48 @@ module volatility_marketplace {
     const E_INVALID_EXPIRATION: u64 = 4;
 
     const ONE_E12: u256 = 1000000000000; // 1e6 scaling factor
+
+    // Events
+    #[event]
+    struct MarketplaceCreated has drop, store {
+        marketplace_address: address,
+        owner: address,
+        usdc_address: address,
+        staking_vault_address: address,
+    }
+
+    #[event]
+    struct MarketCreated has drop, store {
+        market_id: u64,
+        market_address: address,
+        asset_symbol: string::String,
+        initial_volatility: u256,
+        expiration_timestamp: u64,
+        creator: address,
+    }
+
+    #[event]
+    struct MarketSettled has drop, store {
+        market_id: u64,
+        market_address: address,
+        asset_symbol: string::String,
+        settlement_price: u64,
+        settler: address,
+    }
+
+    #[event]
+    struct OwnershipTransferred has drop, store {
+        marketplace_address: address,
+        previous_owner: address,
+        new_owner: address,
+    }
+
+    #[event]
+    struct USDCMinted has drop, store {
+        recipient: address,
+        amount: u64,
+        marketplace_address: address,
+    }
 
     // Capabilities for managing the TestUSDC token
     struct TestUSDCRefs has store {
@@ -36,7 +79,9 @@ module volatility_marketplace {
         // market symbol
         symbol: string::String,
         // market expiration
-        expiration: u64
+        expiration: u64,
+        // iv token address
+        iv_token_address: address,
     }
 
     // Centralized marketplace resource
@@ -108,6 +153,14 @@ module volatility_marketplace {
 
         // Store resources
         move_to(owner, marketplace);
+
+        // Emit marketplace created event
+        event::emit(MarketplaceCreated {
+            marketplace_address: creator_addr,
+            owner: creator_addr,
+            usdc_address,
+            staking_vault_address: vault_address,
+        });
 
         creator_addr
     }
@@ -192,6 +245,16 @@ module volatility_marketplace {
             vector::push_back(&mut new_markets_vector, market_address);
             table::add(&mut marketplace.active_markets_by_asset, asset_symbol, new_markets_vector);
         };
+
+        // Emit market created event
+        event::emit(MarketCreated {
+            market_id,
+            market_address,
+            asset_symbol,
+            initial_volatility,
+            expiration_timestamp,
+            creator: creator_addr,
+        });
         
         (market_id, market_address)
     }
@@ -203,19 +266,31 @@ module volatility_marketplace {
         market_id: u64,
         settlement_price: u64
     ) acquires Marketplace {
+        let settler_addr = signer::address_of(owner);
         let marketplace = borrow_global_mut<Marketplace>(marketplace_address);
         let market_address = *table::borrow(&marketplace.market_addresses, market_id);
+        
+        // Get asset symbol before settling
+        let asset_symbol = implied_volatility_market::get_asset_symbol(market_address);
         
         implied_volatility_market::settle_market(owner, market_address, settlement_price);
 
         // remove the market from active markets by asset
-        let asset_symbol = implied_volatility_market::get_asset_symbol(market_address);
         let markets_vector = table::borrow_mut(&mut marketplace.active_markets_by_asset, asset_symbol);
         let (exists, item_index) = vector::index_of(markets_vector, &market_address);
         
         if(exists) {
             vector::remove(markets_vector, item_index);
-        }
+        };
+
+        // Emit market settled event
+        event::emit(MarketSettled {
+            market_id,
+            market_address,
+            asset_symbol,
+            settlement_price,
+            settler: settler_addr,
+        });
     }
 
 
@@ -229,7 +304,16 @@ module volatility_marketplace {
         let marketplace = borrow_global_mut<Marketplace>(marketplace_address);
         
         assert!(marketplace.owner == owner_addr, error::permission_denied(E_NOT_AUTHORIZED));
+        
+        let previous_owner = marketplace.owner;
         marketplace.owner = new_owner;
+
+        // Emit ownership transferred event
+        event::emit(OwnershipTransferred {
+            marketplace_address,
+            previous_owner,
+            new_owner,
+        });
     }
 
     // Mint TestUSDC tokens to the sender
@@ -245,6 +329,13 @@ module volatility_marketplace {
         
         // Deposit tokens to the sender
         primary_fungible_store::deposit(to, tokens);
+
+        // Emit USDC minted event
+        event::emit(USDCMinted {
+            recipient: to,
+            amount,
+            marketplace_address,
+        });
     }
 
     #[view]
@@ -332,11 +423,13 @@ module volatility_marketplace {
                 while (j < markets_len) {
                     let market_address = *vector::borrow(active_market_addresses, j);
                     let expiration = implied_volatility_market::get_expiration(market_address);
+                    let iv_token_address = implied_volatility_market::get_iv_token_address(market_address);
 
                     let metadata = MarketMetadata {
                         market_address,
                         symbol,
-                        expiration
+                        expiration,
+                        iv_token_address
                     };
 
                     vector::push_back(&mut markets, metadata);

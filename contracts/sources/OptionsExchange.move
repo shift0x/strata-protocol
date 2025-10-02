@@ -10,6 +10,7 @@ module options_exchange {
     use aptos_framework::object::{Self, Object};
     use aptos_framework::primary_fungible_store::{Self};
     use aptos_framework::fungible_asset::{Self, Metadata};
+    use aptos_framework::event;
     use marketplace::binomial_option_pricing;
     use marketplace::isolated_margin_account;
     use marketplace::price_oracle;
@@ -26,6 +27,48 @@ module options_exchange {
     const E_POSITION_CLOSED: u64 = 4;
     const E_UNAUTHORIZED: u64 = 5;
     const E_POSITION_NOT_OPEN: u64 = 6;
+
+    // ------------------------------------------------------------------------
+    // Events
+    // ------------------------------------------------------------------------
+
+    #[event]
+    struct ExchangeCreated has drop, store {
+        exchange_address: address,
+        creator: address,
+        usdc_address: address,
+    }
+
+    #[event]
+    struct MarginAccountCreated has drop, store {
+        exchange_address: address,
+        user: address,
+        margin_account_address: address,
+    }
+
+    #[event]
+    struct PositionOpened has drop, store {
+        exchange_address: address,
+        position_id: u64,
+        trader: address,
+        asset_symbol: String,
+        legs_count: u64,
+        net_debit: u256,
+        net_credit: u256,
+        initial_margin: u256,
+        net_amount_required: u256,
+    }
+
+    #[event]
+    struct PositionClosed has drop, store {
+        exchange_address: address,
+        position_id: u64,
+        trader: address,
+        asset_symbol: String,
+        profit: u256,
+        loss: u256,
+        amount_returned: u256,
+    }
 
     // 1e18 fixed-point scaling used by the pricing model
     const ONE_E18: u256 = 1000000000000000000u256;
@@ -131,6 +174,7 @@ module options_exchange {
         owner: &signer,
         usdc_address: address
     ) : address {
+        let creator_addr = signer::address_of(owner);
         let exchange = OptionsExchange { 
             user_positions: vector::empty<Position>(),
             user_position_lookup: table::new<address, vector<u64>>(),
@@ -144,7 +188,14 @@ module options_exchange {
         // create the price oracle
         price_oracle::create(owner);
 
-        signer::address_of(owner)
+        // Emit exchange created event
+        event::emit(ExchangeCreated {
+            exchange_address: creator_addr,
+            creator: creator_addr,
+            usdc_address,
+        });
+
+        creator_addr
     }
 
     public fun close_position(
@@ -168,7 +219,7 @@ module options_exchange {
         assert!(position.trader_address == user_addr, E_UNAUTHORIZED);
 
         // close the position
-        execute_close_position(user, exchange, &mut position, marketplace_address);
+        execute_close_position(user, exchange, &mut position, marketplace_address, exchange_address);
     }
 
 
@@ -182,7 +233,7 @@ module options_exchange {
         let user_addr = signer::address_of(user);
 
         // ensure the user exists
-        ensure_user_created(user_addr, exchange);
+        ensure_user_created(user_addr, exchange, exchange_address);
 
         // create the user position
         position.id = exchange.position_counter + 1;
@@ -196,6 +247,21 @@ module options_exchange {
 
         // execute the trade
         execute_open_position(user, &mut position, marketplace_address, exchange);
+
+        // Emit position opened event
+        event::emit(PositionOpened {
+            exchange_address,
+            position_id: position.id,
+            trader: position.trader_address,
+            asset_symbol: position.asset_symbol,
+            legs_count: vector::length(&position.legs) as u64,
+            net_debit: position.opening_quote.net_debit,
+            net_credit: position.opening_quote.net_credit,
+            initial_margin: position.opening_quote.initial_margin,
+            net_amount_required: position.opening_quote.net_debit + 
+                position.opening_quote.initial_margin - 
+                position.opening_quote.net_credit,
+        });
 
         vector::push_back(&mut exchange.user_positions, position);
     }
@@ -229,7 +295,8 @@ module options_exchange {
         trader: &signer,
         exchange: &OptionsExchange,
         position: &mut Position,
-        marketplace_address: address
+        marketplace_address: address,
+        exchange_address: address
     ) {
         let trader_address = signer::address_of(trader);
         
@@ -308,8 +375,19 @@ module options_exchange {
         };
         
 
-        // update the position status
-        position.status = OrderStatus::CLOSED;
+// update the position status
+position.status = OrderStatus::CLOSED;
+
+        // Emit position closed event
+        event::emit(PositionClosed {
+            exchange_address,
+            position_id: position.id,
+            trader: trader_address,
+            asset_symbol: position.asset_symbol,
+            profit,
+            loss,
+            amount_returned: transfer_amount_to_trader,
+        });
     }
 
     fun execute_open_position(
@@ -343,7 +421,8 @@ module options_exchange {
 
     fun ensure_user_created(
         user_address: address,
-        exchange: &mut OptionsExchange
+        exchange: &mut OptionsExchange,
+        exchange_address: address
     ) {
         if (!table::contains<address, vector<u64>>(&exchange.user_position_lookup, user_address)) {
             // create the user position list
@@ -353,6 +432,13 @@ module options_exchange {
             // create the user margin account
             let margin_account = isolated_margin_account::new(user_address);
             table::add(&mut exchange.user_margin_accounts, user_address, margin_account);
+
+            // Emit margin account created event
+            event::emit(MarginAccountCreated {
+                exchange_address,
+                user: user_address,
+                margin_account_address: margin_account,
+            });
         };
     }
 
