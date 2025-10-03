@@ -33,6 +33,12 @@ function Navbar() {
             >
               Options
             </Link>
+            <Link 
+              to="/staking" 
+              className={`nav-link ${location.pathname === '/staking' ? 'active' : ''}`}
+            >
+              Earn
+            </Link>
           </div>
         )}
         

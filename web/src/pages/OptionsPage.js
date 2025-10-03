@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { formatCurrency, isValidCurrencyAmount, parseCurrency } from '../lib/currency';
+import { openOptionPosition } from '../lib/optionsExchange';
 import './OptionsPage.css';
 
 function OptionsPage() {
-  const { connected } = useWallet();
+  const { connected, signAndSubmitTransaction } = useWallet();
   
   // State for multi-leg option configuration
   const [selectedAsset, setSelectedAsset] = useState('BTC');
@@ -14,7 +15,7 @@ function OptionsPage() {
       optionType: 'call',
       strikePrice: '',
       expirationDays: '7',
-      collateralAmount: '',
+      amount: '',
       isValidAmount: true,
       side: 'buy' // 'buy' or 'sell'
     }
@@ -22,10 +23,9 @@ function OptionsPage() {
   
   // Mock data for available assets
   const assets = [
-    { symbol: 'BTC', name: 'Bitcoin', price: 67500, change: '+2.1%' },
-    { symbol: 'ETH', name: 'Ethereum', price: 3850, change: '+1.8%' },
-    { symbol: 'APT', name: 'Aptos', price: 12.45, change: '+4.2%' },
-    { symbol: 'SOL', name: 'Solana', price: 145, change: '-0.5%' }
+    { symbol: 'BTC-USD', name: 'Bitcoin', price: 67500, change: '+2.1%' },
+    { symbol: 'ETH-USD', name: 'Ethereum', price: 3850, change: '+1.8%' },
+    { symbol: 'APT-USD', name: 'Aptos', price: 12.45, change: '+4.2%' },
   ];
   
   // Mock positions data
@@ -64,7 +64,7 @@ function OptionsPage() {
         optionType: 'call',
         strikePrice: '',
         expirationDays: '7',
-        collateralAmount: '',
+        amount: '',
         isValidAmount: true,
         side: 'buy'
       };
@@ -81,77 +81,97 @@ function OptionsPage() {
 
   // Update a specific leg's property
   const updateLeg = (legId, property, value) => {
-    setLegs(legs.map(leg => 
-      leg.id === legId ? { ...leg, [property]: value } : leg
-    ));
+    console.log({legId, property, value})
+
+    const updatedLegs = legs.map(leg => {
+      if(leg.id == legId){
+        leg[property] = value;
+      }
+
+      return leg;
+    });
+
+    setLegs(updatedLegs);
   };
 
-  const handleCollateralAmountChange = (legId, e) => {
+  const handleAmountChange = (legId, e) => {
     const inputValue = e.target.value;
-    const formatted = formatCurrency(inputValue);
-    updateLeg(legId, 'collateralAmount', formatted);
     
-    const isValid = inputValue.trim() === '' || formatted === '' || isValidCurrencyAmount(formatted);
+    // Allow digits and decimal point for contract count
+    const cleaned = inputValue.replace(/[^\d.]/g, '');
+    
+    // Prevent multiple decimal points
+    const parts = cleaned.split('.');
+    const validInput = parts.length > 2 ? parts[0] + '.' + parts[1] : cleaned;
+    
+    // Update the leg with the clean input
+    updateLeg(legId, 'amount', validInput);
+    
+    // Validate the input - must be positive number
+    const isValid = validInput === '' || (parseFloat(validInput) > 0 && !isNaN(parseFloat(validInput)));
     updateLeg(legId, 'isValidAmount', isValid);
   };
 
-  const calculateLegPremium = (leg) => {
-    // Mock premium calculation for a single leg
-    if (!leg.strikePrice || !leg.collateralAmount) return 0;
-    
-    const strike = parseFloat(leg.strikePrice);
-    const collateral = parseCurrency(leg.collateralAmount);
-    const asset = assets.find(a => a.symbol === selectedAsset);
-    const spotPrice = asset?.price || 0;
-    
-    // Simple mock calculation based on moneyness and time
-    const moneyness = leg.optionType === 'call' ? 
-      Math.max(0, spotPrice - strike) : 
-      Math.max(0, strike - spotPrice);
-    
-    const timeValue = parseFloat(leg.expirationDays) * 2; // Mock time value
-    let premium = moneyness + timeValue + (collateral * 0.02); // 2% base premium
-    premium = Math.max(premium, collateral * 0.01); // Minimum 1% of collateral
-    
-    // If selling, premium is received (positive), if buying, premium is paid (negative)
-    return leg.side === 'sell' ? premium : -premium;
+  // Strategy calculation placeholder - will be replaced with library
+  const strategyCalculation = {
+    netPremium: 0,
+    totalAmount: 0,
+    maxProfit: 'TBD',
+    maxLoss: 0
   };
 
-  const calculateTotalStrategy = () => {
-    const totalPremium = legs.reduce((sum, leg) => sum + calculateLegPremium(leg), 0);
-    const totalCollateral = legs.reduce((sum, leg) => {
-      const collateral = leg.collateralAmount ? parseCurrency(leg.collateralAmount) : 0;
-      return sum + collateral;
-    }, 0);
-    
-    return {
-      netPremium: totalPremium,
-      totalCollateral: totalCollateral,
-      maxProfit: legs.some(leg => leg.side === 'sell') ? 
-        Math.abs(totalPremium) : // Limited profit if selling premium
-        'Unlimited', // Unlimited if only buying
-      maxLoss: totalCollateral + Math.min(0, totalPremium) // Collateral + premium paid
-    };
-  };
 
-  const strategyCalculation = calculateTotalStrategy();
 
-  // Detect common strategy names
-  const getStrategyName = () => {
-    if (legs.length === 1) return 'Single Option';
-    if (legs.length === 2) {
-      const [leg1, leg2] = legs;
-      if (leg1.optionType === leg2.optionType && leg1.side !== leg2.side) {
-        return 'Vertical Spread';
-      }
-      if (leg1.optionType !== leg2.optionType && leg1.strikePrice === leg2.strikePrice) {
-        return 'Straddle';
-      }
-      if (leg1.optionType !== leg2.optionType && leg1.strikePrice !== leg2.strikePrice) {
-        return 'Strangle';
-      }
+  // Handle creating position
+  const handleCreatePosition = async () => {
+    try {
+      // Convert UI data to contract format
+      const asset_symbol = selectedAsset;
+      
+      const leg_option_types = legs.map(leg => 
+        leg.optionType === 'call' ? 0 : 1
+      );
+      
+      const leg_option_sides = legs.map(leg => 
+        leg.side === 'buy' ? 0 : 1  // buy = long (0), sell = short (1)
+      );
+      
+      const leg_option_amounts = legs.map(leg => 
+        parseFloat(leg.amount) || 0
+      );
+      
+      const leg_option_strike_prices = legs.map(leg => 
+        parseFloat(leg.strikePrice)
+      );
+      
+      const leg_option_expirations = legs.map(leg => {
+        // Convert days to timestamp (current time + days * 24 * 60 * 60)
+        const daysInSeconds = parseInt(leg.expirationDays) * 24 * 60 * 60;
+        return Math.floor(Date.now() / 1000) + daysInSeconds;
+      });
+
+      // Create the transaction
+      const transaction = await openOptionPosition(
+        asset_symbol,
+        leg_option_types,
+        leg_option_sides,
+        leg_option_amounts,
+        leg_option_strike_prices,
+        leg_option_expirations
+      );
+
+      console.log('Position transaction:', transaction);
+      
+      // Submit transaction to blockchain
+      const response = await signAndSubmitTransaction(transaction);
+      console.log('Transaction response:', response);
+      
+      alert(`Position created successfully! Transaction hash: ${response.hash}`);
+      
+    } catch (error) {
+      console.error('Error creating position:', error);
+      alert('Error creating position. Please try again.');
     }
-    return 'Custom Strategy';
   };
 
   const currentAsset = assets.find(asset => asset.symbol === selectedAsset);
@@ -163,7 +183,9 @@ function OptionsPage() {
         <div className="page-header-section">
           <h1 className="page-header">Options Trading</h1>
           <p className="hero-subtitle wide">
-            Create and trade multi-leg options strategies. Build spreads, straddles, and custom combinations up to 3 legs.
+            Create and trade multi-leg options strategies. Build spreads, straddles, and custom combinations up to 3 legs. 
+            Options are priced using a on-chain Binomial Option Pricing Model. Pyth oracle is used for asset prices and 
+            risk-free rates.
           </p>
         </div>
 
@@ -171,7 +193,7 @@ function OptionsPage() {
           {/* Left Column - Strategy Creation */}
           <div className="option-creation-panel">
             <div className="panel-header">
-              <h3>{getStrategyName()}</h3>
+              <h3>Position Builder</h3>
               <div className="leg-controls">
                 <span className="leg-count">{legs.length} leg{legs.length > 1 ? 's' : ''}</span>
                 {legs.length < 3 && (
@@ -266,22 +288,18 @@ function OptionsPage() {
                     </div>
 
                     <div className="form-section">
-                      <label className="form-label">Collateral</label>
+                      <label className="form-label">Contracts</label>
                       <div className={`input-group ${!leg.isValidAmount ? 'invalid' : ''}`}>
-                        <div className="token-select">
-                          <img src="/usdc.webp" alt="USDC" className="token-icon" />
-                          <span>USDC</span>
-                        </div>
                         <input
                           type="text"
                           className="amount-input"
-                          placeholder="$0.00"
-                          value={leg.collateralAmount}
-                          onChange={(e) => handleCollateralAmountChange(leg.id, e)}
+                          placeholder="1.0"
+                          value={leg.amount}
+                          onChange={(e) => handleAmountChange(leg.id, e)}
                         />
                       </div>
                       {!leg.isValidAmount && (
-                        <div className="input-error">Please enter a valid amount</div>
+                        <div className="input-error">Please enter a valid number of contracts</div>
                       )}
                     </div>
                   </div>
@@ -329,35 +347,33 @@ function OptionsPage() {
               </div>
               <div className="detail-row">
                 <span>Net Premium</span>
-                <span className={`detail-value ${strategyCalculation.netPremium >= 0 ? 'positive' : 'negative'}`}>
-                  {strategyCalculation.netPremium >= 0 ? '+' : ''}${Math.abs(strategyCalculation.netPremium).toFixed(2)}
+                <span className="detail-value">
+                  $0.00
                 </span>
               </div>
               <div className="detail-row">
-                <span>Total Collateral</span>
-                <span className="detail-value">${strategyCalculation.totalCollateral.toLocaleString()}</span>
+                <span>Total Amount</span>
+                <span className="detail-value">$0</span>
               </div>
               <div className="detail-row">
                 <span>Max Profit</span>
                 <span className="detail-value">
-                  {typeof strategyCalculation.maxProfit === 'string' ? 
-                    strategyCalculation.maxProfit : 
-                    `$${strategyCalculation.maxProfit.toFixed(2)}`
-                  }
+                  TBD
                 </span>
               </div>
               <div className="detail-row">
                 <span>Max Loss</span>
-                <span className="detail-value">${strategyCalculation.maxLoss.toFixed(2)}</span>
+                <span className="detail-value">$0.00</span>
               </div>
             </div>
 
             {/* Create Button */}
             <button 
               className="create-option-btn"
-              disabled={!connected || legs.some(leg => !leg.strikePrice || !leg.collateralAmount || !leg.isValidAmount)}
+              disabled={!connected || legs.some(leg => !leg.strikePrice || !leg.amount || !leg.isValidAmount)}
+              onClick={handleCreatePosition}
             >
-              {!connected ? 'Connect Wallet' : `Create ${getStrategyName()}`}
+              {!connected ? 'Connect Wallet' : 'Create Position'}
             </button>
           </div>
 

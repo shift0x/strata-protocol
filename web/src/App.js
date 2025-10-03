@@ -5,6 +5,7 @@ import Navbar from './components/Navbar';
 import Home from './pages/HomePage';
 import VolatilityMarket from './pages/VolatilityMarket';
 import OptionsPage from './pages/OptionsPage';
+import StakingPage from './pages/StakingPage';
 import './App.css';
 import { WalletProvider } from './providers/WalletProvider';
 
@@ -19,6 +20,7 @@ function App() {
               <Route path="/" element={<Home />} />
               <Route path="/markets" element={<VolatilityMarket />} />
               <Route path="/options" element={<OptionsPage />} />
+              <Route path="/staking" element={<StakingPage />} />
             </Routes>
           </div>
         </Router>
