@@ -56,6 +56,11 @@ module implied_volatility_market {
         reserves: TokenReserves
     }
 
+    struct UserPosition {
+        long_amount: u64,
+        short_amount: u64
+    }
+
 
     struct VolatilityMarket has key {
         // owner of the market
@@ -387,6 +392,12 @@ module implied_volatility_market {
     public fun get_iv_token_metadata(market_addr: address): Object<Metadata> acquires VolatilityMarket {
         let market = borrow_global<VolatilityMarket>(market_addr);
         object::address_to_object<Metadata>(market.pool.iv_address)
+    }
+
+    #[view]
+    public fun get_iv_token_address(market_addr: address): address acquires VolatilityMarket {
+        let market = borrow_global<VolatilityMarket>(market_addr);
+        market.pool.iv_address
     }
 
     // Calculate swap output amount using UniswapV2 constant product formula
@@ -772,5 +783,34 @@ module implied_volatility_market {
             return isolated_margin_account::get_margin_account_state(margin_account_address)
         }
     }
+
+    // Gets the user's position (long and short amounts)
+    #[view]
+    public fun get_user_position(
+        market_address: address,
+        user_address: address
+    ) : UserPosition acquires VolatilityMarket {
+        let market = borrow_global<VolatilityMarket>(market_address);
+
+        // Get long amount from IV tokens the user holds
+        let iv_metadata = object::address_to_object<Metadata>(market.pool.iv_address);
+        let long_amount = primary_fungible_store::balance(user_address, iv_metadata);
+
+        // Get short amount from margin account
+        let short_amount = if (table::contains(&market.isolated_margin_accounts, user_address)) {
+            let margin_account_address = *table::borrow(&market.isolated_margin_accounts, user_address);
+            let margin_account = isolated_margin_account::get_margin_account_state(margin_account_address);
+            isolated_margin_account::get_iv_units_borrowed(&margin_account)
+        } else {
+            0
+        };
+
+        UserPosition {
+            long_amount,
+            short_amount,
+        }
+    }
+
+
 }
 }

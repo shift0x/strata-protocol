@@ -2,12 +2,14 @@ script {
     use std::string;
     use std::signer;
     use std::debug;
+    use std::timestamp;
     use marketplace::volatility_marketplace::{Self};
     use marketplace::options_exchange::{Self};
     use marketplace::staking_vault::{Self};
     use marketplace::price_oracle::{Self};
 
     const ONE_E6 : u64 = 1000000;
+    const ONE_E18 : u256 = 1000000000000000000;
 
     fun main(
         sender: &signer
@@ -70,6 +72,33 @@ script {
         let vault_address = volatility_marketplace::get_staking_vault_address(marketplace_address);
 
         staking_vault::stake(sender, vault_address, staking_amount);
+
+        // create markets for each supported asset
+        let expiration_timestamp = timestamp::now_seconds() + (86400*60); // 60 days from now
+
+        volatility_marketplace::create_market(
+            sender,
+            string::utf8(b"BTC-USD"),
+            30 * ONE_E18,
+            expiration_timestamp,
+            marketplace_address
+        );
+
+        volatility_marketplace::create_market(
+            sender,
+            string::utf8(b"ETH-USD"),
+            55 * ONE_E18,
+            expiration_timestamp,
+            marketplace_address
+        );
+
+        volatility_marketplace::create_market(
+            sender,
+            string::utf8(b"APT-USD"),
+            75 * ONE_E18,
+            expiration_timestamp,
+            marketplace_address
+        );
 
 
     }
