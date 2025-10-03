@@ -32,7 +32,7 @@ script {
         // risk free interest rate
         price_oracle::store_price_identifier(
             sender,
-            option_exchange_address,
+            oracle_address,
             string::utf8(b"Rates.US10Y"),
             pyth_rates_us10y_identifier
         );
@@ -40,7 +40,7 @@ script {
         // BTC
         price_oracle::store_price_identifier(
             sender,
-            option_exchange_address,
+            oracle_address,
             string::utf8(b"BTC-USD"),
             pyth_btcusdc_identifier
         );
@@ -48,7 +48,7 @@ script {
         // ETH
         price_oracle::store_price_identifier(
             sender,
-            option_exchange_address,
+            oracle_address,
             string::utf8(b"ETH-USD"),
             pyth_ethusdc_identifier
         );
@@ -56,7 +56,7 @@ script {
         // APT
         price_oracle::store_price_identifier(
             sender,
-            option_exchange_address,
+            oracle_address,
             string::utf8(b"APT-USD"),
             pyth_aptusdc_identifier
         );
