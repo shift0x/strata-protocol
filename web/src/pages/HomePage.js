@@ -19,8 +19,6 @@ function Home() {
           <Link to="/markets">
             <button className="cta-primary">Enter App</button>
           </Link>
-          
-          <button className="cta-secondary">Developer Documentation</button>
         </div>
       </div>
 
@@ -59,9 +57,27 @@ function Home() {
         
         <div className="module-section">
           <div className="featured-badge">EXECUTION</div>
-          <h2 className="featured-title">Intent-Based Trade Execution</h2>
+          <h2 className="featured-title">Trustless Order Execution</h2>
           <p className="featured-description">
-            Submit trading intents and let keepers execute your trades using real-time oracle data. Earn fees by providing execution services to the network.
+            Liquidity from stakers enables instant execution of option and volatility trades. A (future) keeper network will validate pricing from Pyth price feeds trustless execution across all supported markets (1,000+).
+          </p>
+        </div>
+      </div>
+
+      <div className="modules-container">
+        <div className="module-section">
+          <div className="featured-badge">BUILDER</div>
+          <h2 className="featured-title">Multi-Leg Strategy Builder</h2>
+          <p className="featured-description">
+            Create complex options strategies with up to 3 legs. Build spreads, straddles, and custom combinations across BTC, ETH, and APT with real-time pricing and risk calculations.
+          </p>
+        </div>
+        
+        <div className="module-section">
+          <div className="featured-badge">PASSIVE EARNINGS</div>
+          <h2 className="featured-title">USDC Staking Rewards</h2>
+          <p className="featured-description">
+            Stake USDC to earn from platform trading fees and profits. Your stake provides liquidity for option and volatility positions while earning proportional rewards from all protocol activity.
           </p>
         </div>
       </div>
