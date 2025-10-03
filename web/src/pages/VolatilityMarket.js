@@ -6,6 +6,7 @@ import { calculateTimeToSettlement, formatTime } from '../lib/time';
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 
 import './VolatilityMarket.css';
+import { getAssetPrice } from '../lib/oracle';
 
 function VolatilityMarket() {
   const {
@@ -46,7 +47,6 @@ function VolatilityMarket() {
     }
 
     getMarketData();
-    
   }, [])
 
   // Close dropdown when clicking outside
