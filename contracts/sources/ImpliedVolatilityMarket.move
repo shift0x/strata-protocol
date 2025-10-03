@@ -162,11 +162,11 @@ module implied_volatility_market {
     public entry fun close_short_position(
         user: &signer,
         market_addr: address
-    ) acquires VolatilityMarket {
+    ) acquires VolatilityMarket, MarketRefs {
         let market = borrow_global_mut<VolatilityMarket>(market_addr);
         let user_addr = signer::address_of(user);
 
-        close_short_position_internal(market, user_addr);
+        close_short_position_internal(market, user_addr, market_addr);
     }
 
 
@@ -221,7 +221,7 @@ module implied_volatility_market {
         let token_decimals = 1000000; // 6 decimals (10^6)
 
         // Mint initial IV tokens to the market object
-        let initial_iv_supply = 1000000 * token_decimals; // 1 million tokens with 6 decimals
+        let initial_iv_supply = 10000 * token_decimals; // 10K tokens with 6 decimals
         let iv_tokens = fungible_asset::mint(&iv_token_refs.mint_ref, initial_iv_supply);
         
         // Create primary fungible stores for the vault
@@ -330,7 +330,7 @@ module implied_volatility_market {
         market.settled_at_timestamp = timestamp::now_seconds();
 
         // close short positions
-        close_short_positions(market);
+        close_short_positions(market, market_address);
 
         // payout long positions at settlement price
         close_long_positions(market, market_address);
@@ -397,8 +397,9 @@ module implied_volatility_market {
 
     fun close_short_position_internal (
         market: &mut VolatilityMarket,
-        user_with_short_position: address
-    ) {
+        user_with_short_position: address,
+        market_address: address
+    ) acquires MarketRefs {
         let margin_account_address = *table::borrow(&market.isolated_margin_accounts, user_with_short_position);
         let margin_account = isolated_margin_account::get_margin_account_state(margin_account_address);
 
@@ -412,14 +413,21 @@ module implied_volatility_market {
         // and transferring it directly to the vault.
         let usdc_metadata = object::address_to_object<Metadata>(market.pool.usdc_address);
         let margin_account_signer = isolated_margin_account::get_signer(margin_account_address);
-        let usdc_tokens = primary_fungible_store::withdraw(&margin_account_signer, usdc_metadata, amount_in);
-        primary_fungible_store::deposit(market.staking_vault_address, usdc_tokens);
 
+        // buy back short sold tokens
+        swap_internal(&margin_account_signer, market, market_address, 0, amount_in);
+
+        // burn short sold tokens
+        primary_fungible_store::burn(&market.pool.iv_token_refs.burn_ref, margin_account_address, iv_units_borrowed);
+        
         // transfer the remaining USDC from the margin account back to the user
         // this amount represents their profit or loss on the position
         let remaining_usdc = primary_fungible_store::balance(margin_account_address, usdc_metadata);
-        primary_fungible_store::transfer(&margin_account_signer, usdc_metadata, user_with_short_position, remaining_usdc);
 
+        if(remaining_usdc > 0){
+            primary_fungible_store::transfer(&margin_account_signer, usdc_metadata, user_with_short_position, remaining_usdc);
+        }
+        
         // record the closing of the borrow
         isolated_margin_account::close_borrow(margin_account_address);
     }
@@ -429,15 +437,16 @@ module implied_volatility_market {
     // 2. Repay the loaned USDC to the Vault
     // 3. Transfer the remaining USDC back to the owner
     fun close_short_positions(
-        market: &mut VolatilityMarket
-    ) {
+        market: &mut VolatilityMarket,
+        market_address: address
+    ) acquires MarketRefs {
         let i: u64 = 0;
         let len = vector::length(&market.margin_accounts);
 
         while (i < len) {
             let user_with_short_position = *vector::borrow(&market.margin_accounts, i);
 
-            close_short_position_internal(market, user_with_short_position);
+            close_short_position_internal(market, user_with_short_position, market_address);
 
             i = i + 1;
         }

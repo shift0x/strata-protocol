@@ -48,7 +48,7 @@ module marketplace::implied_volatility_market_test {
         
         // Verify AMM reserves
         let (iv_reserves, usdc_reserves) = implied_volatility_market::get_amm_reserves(market_addr);
-        let expected_iv_supply = 1000000 * 1000000; // 1M tokens with 6 decimals
+        let expected_iv_supply = 10000 * 1000000; // 10K tokens with 6 decimals
         let expected_usdc_reserves = (expected_iv_supply * initial_volatility) / 1000000; // 25M USDC equivalent
         
         assert!(iv_reserves == expected_iv_supply, 7);

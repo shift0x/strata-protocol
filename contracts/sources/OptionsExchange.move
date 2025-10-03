@@ -173,21 +173,6 @@ module options_exchange {
         oracle_address: address,
     }
 
-/*
-struct PositionLeg has store, drop, copy {
-        // the type of the option (call or put)
-        option_type: OptionType,
-        // the side of the position (long or short)
-        side: Side,
-        // number of contracts (nonzero)
-        amount: u256,
-        // strike price expressed in the same base units as underlying_price
-        strike_price: u256,
-        // expiration timestamp (seconds since epoch)
-        expiration: u64
-    }
-    */
-
     // entry functions
     public entry fun open_position(
         user: &signer,
