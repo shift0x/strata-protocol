@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useVolatilityMarket } from '../providers/VolatilityMarketProvider';
-import { formatCurrency, isValidCurrencyAmount } from '../lib/currency';
-import { getMarkets, getUserPosition } from '../lib/volatilityMarketplace';
+import { formatCurrency, isValidCurrencyAmount, parseCurrency } from '../lib/currency';
+import { getMarkets, getUserPosition, getMarketPrice, getAmountOut, buildSwapTransaction, buildOpenShortTransaction, buildCloseLongPositionTransaction, buildCloseShortTransaction, mintTestUSDCTransaction } from '../lib/volatilityMarketplace';
 import { calculateTimeToSettlement, formatTime } from '../lib/time';
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 
@@ -9,22 +9,21 @@ import './VolatilityMarket.css';
 
 function VolatilityMarket() {
   const {
-    getOpenPositions,
-    getClosedPositions,
-    closePosition,
-    calculateSwapOutput,
     getCurrentMarketData
   } = useVolatilityMarket();
   
-  const { connected, account } = useWallet();
+  const { connected, account, signAndSubmitTransaction } = useWallet();
   const [markets, setMarkets] = useState([]);
+  
   const [selectedMarket, setSelectedMarket] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [showOpenPositions, setShowOpenPositions] = useState(true);
+
   const [localTimeToSettlement, setLocalTimeToSettlement] = useState(null);
   const [usdcAmount, setUsdcAmount] = useState('');
   const [isValidAmount, setIsValidAmount] = useState(true);
   const [swapOutput, setSwapOutput] = useState(null);
+  const [marketPrice, setMarketPrice] = useState(null);
+  const [userPosition, setUserPosition] = useState(null);
   const dropdownRef = useRef(null);
   const chartRef = useRef(null);
   const chartWidget = useRef(null);
@@ -168,28 +167,50 @@ function VolatilityMarket() {
     const accountAddress = account.address.bcsToHex().toString();
     const marketAddress = currentMarket.marketAddress;
 
-    getUserPosition(marketAddress, accountAddress);
+    const updateUserPosition = async() => {
+      try {
+        const position = await getUserPosition(marketAddress, accountAddress);
+        setUserPosition(position);
+      } catch (error) {
+        console.error('Failed to get user position:', error);
+        setUserPosition(null);
+      }
+    }
+
+    updateUserPosition();
+
   }, [currentMarket, account]);
+
+  // Get market price when selected market changes
+  useEffect(() => {
+    if (!currentMarket) return;
+
+    const fetchMarketPrice = async () => {
+      try {
+        const price = await getMarketPrice(currentMarket.marketAddress);
+        setMarketPrice(price);
+      } catch (error) {
+        console.error('Failed to fetch market price:', error);
+        setMarketPrice(null);
+      }
+    };
+
+    fetchMarketPrice();
+  }, [currentMarket, userPosition]);
 
   const handleMarketSelect = (market) => {
     setSelectedMarket(market.name);
     setIsDropdownOpen(false);
   };
 
-  // Get positions and market data from provider
-  const openPositions = getOpenPositions(selectedMarket);
-  const closedPositions = getClosedPositions(selectedMarket);
+  // Get market data from provider
   const marketData = getCurrentMarketData(selectedMarket);
 
-  const handleClosePosition = (positionId) => {
-    closePosition(positionId, selectedMarket);
-    // In a real app, you might want to refresh the data or show a confirmation
-    alert(`Position ${positionId} closed successfully!`);
-  };
+
 
   const handleUsdcAmountChange = (e) => {
     const inputValue = e.target.value;
-    
+  
     // Format the input as currency
     const formatted = formatCurrency(inputValue);
     setUsdcAmount(formatted);
@@ -200,8 +221,15 @@ function VolatilityMarket() {
     
     // Calculate swap output if valid amount
     if (isValid && formatted && formatted !== '$') {
-      const output = calculateSwapOutput(formatted, 'BUY');
-      setSwapOutput(output);
+      const numericValue = parseCurrency(inputValue);
+
+      getAmountOut(currentMarket.marketAddress, numericValue, 'LONG')
+        .then(result => setSwapOutput(result))
+        .catch(error => {
+          console.error('Failed to get amount out:', error);
+          setSwapOutput(null);
+        });
+      
     } else {
       setSwapOutput(null);
     }
@@ -214,8 +242,138 @@ function VolatilityMarket() {
     setIsValidAmount(true);
     
     // Calculate swap output for max amount
-    const output = calculateSwapOutput(maxBalance, 'BUY');
-    setSwapOutput(output);
+    const numericValue = parseFloat(maxBalance.replace(/[^\d.]/g, ''));
+    if (numericValue > 0 && currentMarket) {
+      getAmountOut(currentMarket.marketAddress, numericValue, 'LONG')
+        .then(result => setSwapOutput(result))
+        .catch(error => {
+          console.error('Failed to get amount out:', error);
+          setSwapOutput(null);
+        });
+    }
+  };
+
+  const handleClosePosition = async (positionType) => {
+    if (!connected || !currentMarket) {
+      alert('Please connect wallet');
+      return;
+    }
+
+    try {
+      const senderAddress = account.address.bcsToHex().toString();
+      const marketAddress = currentMarket.marketAddress;
+      
+      let transaction;
+      
+      if (positionType === 'LONG') {
+        const ivTokenAddress = currentMarket.ivTokenAddress;
+        transaction = await buildCloseLongPositionTransaction(senderAddress, marketAddress, ivTokenAddress);
+      } else if (positionType === 'SHORT') {
+        transaction = await buildCloseShortTransaction(marketAddress);
+      } else {
+        alert('Unknown position type');
+        return;
+      }
+      
+      const response = await signAndSubmitTransaction(transaction);
+      
+      console.log(`${positionType} position close transaction:`, response);
+      alert(`${positionType} position closed successfully!`);
+      
+      // Refresh user position
+      const position = await getUserPosition(marketAddress, senderAddress);
+      setUserPosition(position);
+      
+    } catch (error) {
+      console.error(`Failed to close ${positionType} position:`, error);
+      alert(`Failed to close ${positionType} position`);
+    }
+  };
+
+  const handleMintTestUSDC = async () => {
+    if (!connected) {
+      alert('Please connect wallet');
+      return;
+    }
+
+    try {
+      const senderAddress = account.address.bcsToHex().toString();
+      const transaction = await mintTestUSDCTransaction(senderAddress);
+      
+      const response = await signAndSubmitTransaction(transaction);
+      
+      console.log('Mint test USDC transaction:', response);
+      alert('100,000 test USDC minted successfully!');
+      
+    } catch (error) {
+      console.error('Failed to mint test USDC:', error);
+      alert('Failed to mint test USDC');
+    }
+  };
+
+  const handleLongPosition = async () => {
+    if (!connected || !currentMarket || !usdcAmount || !isValidAmount) {
+      alert('Please connect wallet and enter a valid amount');
+      return;
+    }
+
+    try {
+      const senderAddress = account.address.bcsToHex().toString();
+      const marketAddress = currentMarket.marketAddress;
+      const amountIn = parseCurrency(usdcAmount);
+      const swapType = 0; // Long position
+
+      const transaction = await buildSwapTransaction(marketAddress, swapType, amountIn);
+      
+      const response = await signAndSubmitTransaction(transaction);
+      
+      console.log('Long position transaction:', response);
+      alert('Long position opened successfully!');
+      
+      // Refresh user position
+      const position = await getUserPosition(marketAddress, senderAddress);
+      setUserPosition(position);
+      
+      // Clear form
+      setUsdcAmount('');
+      setSwapOutput(null);
+      
+    } catch (error) {
+      console.error('Failed to open long position:', error);
+      alert('Failed to open long position');
+    }
+  };
+
+  const handleShortPosition = async () => {
+    if (!connected || !currentMarket || !usdcAmount || !isValidAmount) {
+      alert('Please connect wallet and enter a valid amount');
+      return;
+    }
+
+    try {
+      const senderAddress = account.address.bcsToHex().toString();
+      const marketAddress = currentMarket.marketAddress;
+      const amountIn = parseCurrency(usdcAmount);
+
+      const transaction = await buildOpenShortTransaction(marketAddress, amountIn);
+      
+      const response = await signAndSubmitTransaction(transaction);
+      
+      console.log('Short position transaction:', response);
+      alert('Short position opened successfully!');
+      
+      // Refresh user position
+      const position = await getUserPosition(marketAddress, senderAddress);
+      setUserPosition(position);
+      
+      // Clear form
+      setUsdcAmount('');
+      setSwapOutput(null);
+      
+    } catch (error) {
+      console.error('Failed to open short position:', error);
+      alert('Failed to open short position');
+    }
   };
 
   return (
@@ -295,76 +453,59 @@ function VolatilityMarket() {
             <div className="positions-section">
               <div className="positions-header">
                 <h3>Your Positions</h3>
-                <div className="position-toggles">
-                  <button 
-                    className={`toggle-btn ${showOpenPositions ? 'active' : ''}`}
-                    onClick={() => setShowOpenPositions(true)}
-                  >
-                    Open ({openPositions.length})
-                  </button>
-                  <button 
-                    className={`toggle-btn ${!showOpenPositions ? 'active' : ''}`}
-                    onClick={() => setShowOpenPositions(false)}
-                  >
-                    Closed ({closedPositions.length})
-                  </button>
-                </div>
               </div>
               <div className="positions-table-container">
-                <table className="positions-table">
-                  <thead>
-                    <tr>
-                      <th>Type</th>
-                      <th>Size</th>
-                      <th>Entry Price</th>
-                      {showOpenPositions ? <th>Current Price</th> : <th>Exit Price</th>}
-                      <th>P&L</th>
-                      <th>Date</th>
-                      {showOpenPositions && <th></th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(showOpenPositions ? openPositions : closedPositions).map((position) => (
-                      <tr key={position.id}>
+                {!connected ? (
+                  <div className="no-positions">Connect wallet to view positions</div>
+                ) : !userPosition ? (
+                  <div className="no-positions">Loading positions...</div>
+                ) : (
+                  <table className="positions-table">
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th>Amount</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
                         <td>
-                          <span className={`position-badge ${position.type.toLowerCase()}`}>
-                            {position.type} IV
+                          <span className="position-badge long">
+                            LONG IV
                           </span>
                         </td>
-                        <td>{position.size.toLocaleString()} tokens</td>
-                        <td>{position.entryPrice}%</td>
+                        <td>{userPosition.long.toLocaleString()} tokens</td>
+                        <td className="actions-cell">
+                          <button 
+                            className="close-position-btn width-75"
+                            onClick={() => handleClosePosition('LONG')}
+                            disabled={userPosition.long === 0}
+                          >
+                            Close
+                          </button>
+                        </td>
+                      </tr>
+                      <tr>
                         <td>
-                          {showOpenPositions ? `${position.currentPrice}%` : `${position.exitPrice}%`}
+                          <span className="position-badge short">
+                            SHORT IV
+                          </span>
                         </td>
-                        <td>
-                          <div className="pnl-cell">
-                            <span className={`pnl-value ${position.pnl >= 0 ? 'positive' : 'negative'}`}>
-                              {position.pnl >= 0 ? '+' : ''}${Math.abs(position.pnl).toFixed(2)} ({position.pnlPercentage}%)
-                            </span>
-                          </div>
+                        <td>{userPosition.short.toLocaleString()} tokens</td>
+                        <td className="actions-cell">
+                          <button 
+                            className="close-position-btn width-75"
+                            onClick={() => handleClosePosition('SHORT')}
+                            disabled={userPosition.short === 0}
+                          >
+                            Close
+                          </button>
                         </td>
-                        <td className="date-cell">
-                          <div>
-                            <div>
-                              {position.timestamp.split(' ')[0]}
-                              <span className="time"> {position.timestamp.split(' ')[1]}</span>
-                            </div>
-                          </div>
-                        </td>
-                          {showOpenPositions && (
-                           <td className="actions-cell">
-                             <button 
-                               className="close-position-btn"
-                               onClick={() => handleClosePosition(position.id)}
-                             >
-                               Close
-                             </button>
-                           </td>
-                         )}
-                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                      </tr>
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           </div>
@@ -376,7 +517,7 @@ function VolatilityMarket() {
               <div className="iv-price-display">
                 <div className="current-price">
                   <span className="price-label">Market IV</span>
-                  <span className="price-value">{marketData.currentIV}%</span>
+                  <span className="price-value">{marketPrice ? `${marketPrice}%` : '—'}</span>
                 </div>
                 <div className="price-change">
                   <span className={`change-value ${marketData.dailyChange >= 0 ? 'positive' : 'negative'}`}>
@@ -425,17 +566,40 @@ function VolatilityMarket() {
                 </span>
               </div>
               <div className="detail-row">
-                <span>Fees (${swapOutput?.feePercentage || 1}%)</span>
+                <span>Fees ({swapOutput?.feePercentage || 1}%)</span>
                 <span className="detail-value">
-                  {swapOutput ? `$${swapOutput.feeAmount.toFixed(2)}` : '—'}
+                  {swapOutput ? `$${ swapOutput.feeAmount.toFixed(2)}` : '—'}
                 </span>
               </div>
             </div>
 
             {/* Action buttons */}
             <div className="action-buttons">
-              <button className="action-btn primary">Buy IV</button>
-              <button className="action-btn secondary">Open Short</button>
+              <button 
+                className="action-btn primary" 
+                onClick={handleLongPosition}
+                disabled={!connected || !usdcAmount || !isValidAmount}
+              >
+                Buy IV
+              </button>
+              <button 
+                className="action-btn secondary" 
+                onClick={handleShortPosition}
+                disabled={!connected || !usdcAmount || !isValidAmount}
+              >
+                Open Short
+              </button>
+            </div>
+
+            {/* Test USDC Mint Section */}
+            <div className="test-usdc-section">
+              <button 
+                className="action-btn accent full-width" 
+                onClick={handleMintTestUSDC}
+                disabled={!connected}
+              >
+                Mint 100,000 Test USDC
+              </button>
             </div>
           </div>
         </div>

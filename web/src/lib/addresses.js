@@ -1,8 +1,8 @@
 export const addresses = {
-    code: "0x1691430a0c100b048f8c0002f74334ba836134ee1b3de9ebfd666fa1e0425516",
-    usdc: "0xcf0c8ba840c19b984c5ed002f7e89b74b93102a19d9cf1481f060ce9d2f484",
-    marketplace: "0x72ea4f78a4bedea97d0a1a67d48543372e35b681745982764ae68b9ce249a06d",
-    staking_vault: "0xe7984036f0e84cfa7b9e4b5a6b7cdeafce442fce1aaee334bbc5c6036fc31fc9",
-    options_exchange: "0x438b8f11787cc5f879ee699ce6e1a3974b106a0705f9a0477bcf2a4a9ec1cb7d",
-    price_oracle: "0xc565b4f45752abaad0b5073393bc1b9294d9bf5eaedf6d0d4d4fbb1eb9999d18"
+    code: "0xaa1695ff8762c3cdedd363dd6de953c362dada9d7ee8125ec921c0aec0fec9be",
+    usdc: "0x6306444d5af27b5897c629d6a8dbb6f61072cbee7ba955e030b49ee09859a87f",
+    marketplace: "0x45539a551f0c611df449fde6994633b0441c0de530acbf47b819e34c28fafeb2",
+    staking_vault: "0x999d1f7756a36364aa51e1ac18f0f1ac302c2ed88e20c82951f98db5c464d883",
+    options_exchange: "0x680c018f38db49ca94aa74e1580fa03df9cb54f0a586d2775fc9dc765bd31aea",
+    price_oracle: "0x2baac090c4782b734b02d219e03c20143a476b2611d861b3cd1955e9d0c25218"
 }

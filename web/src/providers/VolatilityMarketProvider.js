@@ -185,42 +185,7 @@ export const VolatilityMarketProvider = ({ children }) => {
     return null;
   };
 
-  // Calculate swap output and fees for USDC input
-  const calculateSwapOutput = (usdcAmount, tradeType = 'BUY') => {
-    // Parse the numeric value from formatted currency
-    const numericAmount = parseFloat(usdcAmount.replace(/[^\d.]/g, ''));
-    
-    if (!numericAmount || numericAmount <= 0) {
-      return {
-        outputAmount: 0,
-        outputTokens: 0,
-        feeAmount: 0,
-        feePercentage: 0,
-        pricePerToken: 0
-      };
-    }
 
-    // Mock pricing logic - in a real app this would use actual market data
-    const basePrice = tradeType === 'BUY' ? 1.047 : 0.953; // Different prices for buy/sell
-    const feePercentage = 1; // 1% fee
-    
-    // Calculate fee
-    const feeAmount = numericAmount * (feePercentage / 100);
-    const amountAfterFees = numericAmount - feeAmount;
-    
-    // Calculate output tokens
-    const outputTokens = Math.floor(amountAfterFees / basePrice);
-    const outputAmount = outputTokens * basePrice;
-    
-    return {
-      outputAmount: outputAmount,
-      outputTokens: outputTokens,
-      feeAmount: feeAmount,
-      feePercentage: feePercentage,
-      pricePerToken: basePrice,
-      slippage: 0.1 // Mock slippage
-    };
-  };
 
   // Get current market price for IV tokens
   const getCurrentIVPrice = (marketName) => {
@@ -299,7 +264,7 @@ export const VolatilityMarketProvider = ({ children }) => {
     getAllUserPositions,
     getMarketPnL,
     closePosition,
-    calculateSwapOutput,
+
     getCurrentIVPrice,
     getCurrentMarketData
   };

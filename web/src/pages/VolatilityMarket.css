@@ -756,6 +756,16 @@
   background-color: #b91c1c;
 }
 
+.action-btn.accent {
+  background-color: royalblue;
+  border: 1px solid royalblue;
+  color: #ffffff;
+}
+
+.action-btn.accent:hover {
+  background-color: royalblue;
+}
+
 .settlement-info {
   display: flex;
   justify-content: space-between;
