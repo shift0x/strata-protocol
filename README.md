@@ -18,6 +18,7 @@ The goal of the market is to "predict" the realized volatility of an asset over 
 - Short positions can be liquidated by anyone ones the health score is below the required threshold. The liquidator earns a fee for this service
 
 **Future Work**
+
 Currently markets are settled using off-chain calculations of historical volatility. Participants need to trust that the market owner is not manipulating the data. In the future, we plan to push this calculation on-chain and instead use a keeper network to submit the datapoints from the pyth feed that will go into the calculation. The contract will ensure the datapoints provided are within the desired range and expected span to settle markets.
 
 
@@ -36,6 +37,7 @@ When users or contracts wish to execute an option trade, the liquidity from stak
 This functionality does open up the possibility of front-running orders. To mitigate this, the market charges 1% transaction fee and markets are currently limited to markets that are sponsored by Aptos, this ensures a 15s heartbeat.
 
 **Future Work**
+
 In the future, the plan is to implement a keeper network where intents are submitted on chain, capturing the asset to be traded and the required data feeds to do an accurate to the second pricing. Keepers will be responsible for publishing aptos price feeds to the execution contract, where it will check that the price update is within a given price threshold (~1.5sec).
 
 The contract will then use this price data to do option pricing and execute trades.
