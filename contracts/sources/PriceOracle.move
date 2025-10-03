@@ -4,6 +4,8 @@ module price_oracle {
     use std::timestamp;
     use std::string;
     use std::signer;
+    use std::event;
+    use std::object::{Self};
     use std::table::{Self, Table};
     use pyth::pyth;
     use pyth::i64;
@@ -12,6 +14,13 @@ module price_oracle {
 
     // Error codes
     const E_ONLY_OWNER: u64 = 1;
+
+    // Events
+    #[event]
+    struct OracleCreated has drop, store {
+        oracle_address: address,
+        creator: address
+    }
 
     struct PriceOracle has key {
         // owner address
@@ -27,15 +36,25 @@ module price_oracle {
     ) : address {
         let owner_address = signer::address_of(owner);
 
+        // Create the new oracle
+        let constructor_ref = object::create_object(owner_address);
+        let object_signer = object::generate_signer(&constructor_ref);
+        let object_addr = signer::address_of(&object_signer);
+
         let oracle = PriceOracle {
             owner: owner_address,
             pyth_price_identifier_lookup: table::new(),
             asset_mock_price_lookup: table::new()
         };
 
-        move_to(owner, oracle);
+        move_to(&object_signer, oracle);
 
-        owner_address
+        event::emit(OracleCreated {
+            oracle_address: object_addr,
+            creator: owner_address
+        });
+
+        object_addr
     }
 
     // used for testing to set the price of a given asset
@@ -75,10 +94,10 @@ module price_oracle {
     // use the pyth price identifier to get the price of an asset
     // if a mock price exists, then return that instead
     public fun get_price(
-        marketplace_address: address,
+        oracle_address: address,
         asset_symbol: string::String
     ) : u256 acquires PriceOracle {
-        let oracle = borrow_global<PriceOracle>(marketplace_address);
+        let oracle = borrow_global<PriceOracle>(oracle_address);
 
         // If there is a mock price stored, then return that
         if(table::contains(&oracle.asset_mock_price_lookup, asset_symbol)) {

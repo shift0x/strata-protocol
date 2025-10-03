@@ -17,8 +17,7 @@ module marketplace::volatility_marketplace_test {
         timestamp::set_time_has_started_for_testing(&framework);
 
         // Create marketplace
-        volatility_marketplace::create_marketplace(&creator);
-        let marketplace_addr = signer::address_of(&creator);
+        let marketplace_addr = volatility_marketplace::create_marketplace(&creator);
         
         // Test parameters
         let asset_symbol = string::utf8(b"BTC");
@@ -61,8 +60,7 @@ module marketplace::volatility_marketplace_test {
         timestamp::set_time_has_started_for_testing(&framework);
 
         // Create marketplace
-        volatility_marketplace::create_marketplace(&creator);
-        let marketplace_addr = signer::address_of(&creator);
+        let marketplace_addr = volatility_marketplace::create_marketplace(&creator);
         
         // Test parameters
         let asset_symbol = string::utf8(b"BTC");

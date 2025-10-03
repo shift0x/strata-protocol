@@ -21,7 +21,7 @@ script {
         let usdc_address = volatility_marketplace::get_usdc_address(marketplace_address);
 
         // create the option exchange
-        let option_exchange_address = options_exchange::create_exchange(sender, usdc_address);
+        let (option_exchange_address, oracle_address) = options_exchange::create_exchange(sender, usdc_address);
 
         // register price feeds with the oracle
         let pyth_rates_us10y_identifier = x"e13490529898ba044274027323a175105d89bc43c2474315c76a051ba02d76f8";

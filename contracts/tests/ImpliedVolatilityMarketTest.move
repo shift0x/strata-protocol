@@ -18,10 +18,9 @@ module marketplace::implied_volatility_market_test {
         timestamp::set_time_has_started_for_testing(&framework);
 
         // create marketplace
-        volatility_marketplace::create_marketplace(&creator);
+        let marketplace_addr = volatility_marketplace::create_marketplace(&creator);
         
         // Get TestUSDC address from marketplace
-        let marketplace_addr = signer::address_of(&creator);
         let usdc_metadata = volatility_marketplace::get_test_usdc_metadata(marketplace_addr);
         let usdc_address = object::object_address(&usdc_metadata);
         
@@ -67,8 +66,7 @@ module marketplace::implied_volatility_market_test {
         timestamp::set_time_has_started_for_testing(&framework);
 
         // Create marketplace
-        volatility_marketplace::create_marketplace(&creator);
-        let marketplace_addr = signer::address_of(&creator);
+        let marketplace_addr = volatility_marketplace::create_marketplace(&creator);
         
         // Create a volatility market
         let asset_symbol = string::utf8(b"BTC");
@@ -154,8 +152,7 @@ module marketplace::implied_volatility_market_test {
         timestamp::set_time_has_started_for_testing(&framework);
 
         // Create marketplace
-        volatility_marketplace::create_marketplace(&creator);
-        let marketplace_addr = signer::address_of(&creator);
+        let marketplace_addr = volatility_marketplace::create_marketplace(&creator);
         
         // Create a volatility market
         let asset_symbol = string::utf8(b"ETH");
@@ -183,8 +180,7 @@ module marketplace::implied_volatility_market_test {
         timestamp::set_time_has_started_for_testing(&framework);
 
         // Create marketplace
-        volatility_marketplace::create_marketplace(&creator);
-        let marketplace_addr = signer::address_of(&creator);
+        let marketplace_addr = volatility_marketplace::create_marketplace(&creator);
 
         // Mint test tokens to the staker signer
         let staking_amount = 100000 * 1000000; // 100K USDC
@@ -251,8 +247,7 @@ module marketplace::implied_volatility_market_test {
         timestamp::set_time_has_started_for_testing(&framework);
 
         // Create marketplace
-        volatility_marketplace::create_marketplace(&creator);
-        let marketplace_addr = signer::address_of(&creator);
+        let marketplace_addr = volatility_marketplace::create_marketplace(&creator);
 
         // Stake tokens to facilitate borrows
         let staking_amount = 100000 * 1000000; // 100K USDC
@@ -295,8 +290,7 @@ module marketplace::implied_volatility_market_test {
         timestamp::set_time_has_started_for_testing(&framework);
 
         // Create marketplace
-        volatility_marketplace::create_marketplace(&creator);
-        let marketplace_addr = signer::address_of(&creator);
+        let marketplace_addr = volatility_marketplace::create_marketplace(&creator);
 
         // Create a volatility market
         let asset_symbol = string::utf8(b"BTC");
@@ -326,8 +320,7 @@ module marketplace::implied_volatility_market_test {
         timestamp::set_time_has_started_for_testing(&framework);
 
         // Create marketplace
-        volatility_marketplace::create_marketplace(&creator);
-        let marketplace_addr = signer::address_of(&creator);
+        let marketplace_addr = volatility_marketplace::create_marketplace(&creator);
 
         // Create a volatility market that hasn't expired yet
         let asset_symbol = string::utf8(b"BTC");
@@ -354,8 +347,7 @@ module marketplace::implied_volatility_market_test {
         timestamp::set_time_has_started_for_testing(&framework);
 
         // Create marketplace
-        volatility_marketplace::create_marketplace(&creator);
-        let marketplace_addr = signer::address_of(&creator);
+        let marketplace_addr = volatility_marketplace::create_marketplace(&creator);
 
         // Create a volatility market
         let asset_symbol = string::utf8(b"BTC");
@@ -387,8 +379,7 @@ module marketplace::implied_volatility_market_test {
         timestamp::set_time_has_started_for_testing(&framework);
 
         // Create marketplace
-        volatility_marketplace::create_marketplace(&creator);
-        let marketplace_addr = signer::address_of(&creator);
+        let marketplace_addr = volatility_marketplace::create_marketplace(&creator);
 
         // Stake tokens
         let staking_amount = 100000 * 1000000;
@@ -448,8 +439,7 @@ module marketplace::implied_volatility_market_test {
         timestamp::set_time_has_started_for_testing(&framework);
 
         // Create marketplace
-        volatility_marketplace::create_marketplace(&creator);
-        let marketplace_addr = signer::address_of(&creator);
+        let marketplace_addr = volatility_marketplace::create_marketplace(&creator);
 
         // Stake tokens
         let staking_amount = 100000 * 1000000;
@@ -511,8 +501,7 @@ module marketplace::implied_volatility_market_test {
         timestamp::set_time_has_started_for_testing(&framework);
 
         // Create marketplace
-        volatility_marketplace::create_marketplace(&creator);
-        let marketplace_addr = signer::address_of(&creator);
+        let marketplace_addr = volatility_marketplace::create_marketplace(&creator);
 
         // Stake tokens
         let staking_amount = 10000000000 * 1000000;

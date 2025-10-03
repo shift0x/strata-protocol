@@ -361,13 +361,13 @@ module marketplace::options_exchange_tests {
 
         // create the option exchange
         let usdc_address = volatility_marketplace::get_usdc_address(marketplace_addr);
-        let exchange_address = options_exchange::create_exchange(creator, usdc_address);
+        let (exchange_address, oracle_address) = options_exchange::create_exchange(creator, usdc_address);
 
         // Set the quote price of ETH for testing
         let eth_price = 1000 * ONE_E18;
         price_oracle::set_mock_price(
             creator, 
-            exchange_address, 
+            oracle_address, 
             string::utf8(b"ETH"), 
             eth_price);
 
@@ -375,7 +375,7 @@ module marketplace::options_exchange_tests {
         let us10y_price = (5 * ONE_E18)/100; // 5%
         price_oracle::set_mock_price(
             creator, 
-            exchange_address, 
+            oracle_address, 
             string::utf8(b"Rates.US10Y"), 
             us10y_price);
         
@@ -464,13 +464,13 @@ module marketplace::options_exchange_tests {
 
         // create the option exchange
         let usdc_address = volatility_marketplace::get_usdc_address(marketplace_addr);
-        let exchange_address = options_exchange::create_exchange(creator, usdc_address);
+        let (exchange_address, oracle_address) = options_exchange::create_exchange(creator, usdc_address);
 
         // Set the quote price of ETH for testing
         let eth_price = 1000 * ONE_E18;
         price_oracle::set_mock_price(
             creator, 
-            exchange_address, 
+            oracle_address, 
             string::utf8(b"ETH"), 
             eth_price);
 
@@ -478,7 +478,7 @@ module marketplace::options_exchange_tests {
         let us10y_price = (5 * ONE_E18)/100; // 5%
         price_oracle::set_mock_price(
             creator, 
-            exchange_address, 
+            oracle_address, 
             string::utf8(b"Rates.US10Y"), 
             us10y_price);
         
@@ -515,7 +515,7 @@ module marketplace::options_exchange_tests {
         let eth_price = 1100 * ONE_E18;
         price_oracle::set_mock_price(
             creator, 
-            exchange_address, 
+            oracle_address, 
             string::utf8(b"ETH"), 
             eth_price);
 
@@ -565,13 +565,13 @@ module marketplace::options_exchange_tests {
 
         // create the option exchange
         let usdc_address = volatility_marketplace::get_usdc_address(marketplace_addr);
-        let exchange_address = options_exchange::create_exchange(creator, usdc_address);
+        let (exchange_address, oracle_address) = options_exchange::create_exchange(creator, usdc_address);
 
         // Set the quote price of ETH for testing
         let eth_price = 1000 * ONE_E18;
         price_oracle::set_mock_price(
             creator, 
-            exchange_address, 
+            oracle_address, 
             string::utf8(b"ETH"), 
             eth_price);
 
@@ -579,7 +579,7 @@ module marketplace::options_exchange_tests {
         let us10y_price = (5 * ONE_E18)/100; // 5%
         price_oracle::set_mock_price(
             creator, 
-            exchange_address, 
+            oracle_address, 
             string::utf8(b"Rates.US10Y"), 
             us10y_price);
         
@@ -616,7 +616,7 @@ module marketplace::options_exchange_tests {
         let eth_price = 980 * ONE_E18;
         price_oracle::set_mock_price(
             creator, 
-            exchange_address, 
+            oracle_address, 
             string::utf8(b"ETH"), 
             eth_price);
 

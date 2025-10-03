@@ -9,16 +9,10 @@ module marketplace::staking_vault_tests {
 
     #[test(creator = @0x123, user = @0x456)]
     public fun test_stake_and_unstake(creator: &signer, user: &signer) {
-        // Setup accounts
-        let creator_addr = signer::address_of(creator);
         let user_addr = signer::address_of(user);
         
-        account::create_account_for_test(creator_addr);
-        account::create_account_for_test(user_addr);
-
         // Create marketplace
-        volatility_marketplace::create_marketplace(creator);
-        let marketplace_address = creator_addr;
+        let marketplace_address = volatility_marketplace::create_marketplace(creator);
         
         // Get the staking vault address from the marketplace
         let vault_address = volatility_marketplace::get_staking_vault_address(marketplace_address);
@@ -26,10 +20,10 @@ module marketplace::staking_vault_tests {
         // Mint test USDC for the user
         let factor = 1000000; //10^6
         let stake_amount = 1000 * factor;
-        volatility_marketplace::mint_test_usdc(stake_amount, user_addr, creator_addr);
+        volatility_marketplace::mint_test_usdc(stake_amount, user_addr, marketplace_address);
         
         // Get USDC metadata to check balances
-        let usdc_metadata = volatility_marketplace::get_test_usdc_metadata(creator_addr);
+        let usdc_metadata = volatility_marketplace::get_test_usdc_metadata(marketplace_address);
 
         // Test initial staking balance should be 0
         let initial_balance = staking_vault::get_staking_balance(vault_address, user_addr);

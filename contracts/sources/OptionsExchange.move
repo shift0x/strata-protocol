@@ -35,6 +35,7 @@ module options_exchange {
     #[event]
     struct ExchangeCreated has drop, store {
         exchange_address: address,
+        oracle_address: address,
         creator: address,
         usdc_address: address,
     }
@@ -168,34 +169,44 @@ module options_exchange {
         position_counter: u64,
         // address of usdc token
         usdc_address: address,
+        // address of the price oracle
+        oracle_address: address,
     }
 
     public fun create_exchange(
         owner: &signer,
         usdc_address: address
-    ) : address {
+    ) : (address, address) {
         let creator_addr = signer::address_of(owner);
+
+        // create the price oracle
+        let oracle_address = price_oracle::create(owner);
+
+        // Create the new exchange
+        let constructor_ref = object::create_object(creator_addr);
+        let object_signer = object::generate_signer(&constructor_ref);
+        let object_addr = signer::address_of(&object_signer);
+
         let exchange = OptionsExchange { 
             user_positions: vector::empty<Position>(),
             user_position_lookup: table::new<address, vector<u64>>(),
             user_margin_accounts: table::new<address, address>(),
             position_counter: 0,
             usdc_address,
+            oracle_address
         };
 
-        move_to<OptionsExchange>(owner, exchange);
-
-        // create the price oracle
-        price_oracle::create(owner);
+        move_to<OptionsExchange>(&object_signer, exchange);
 
         // Emit exchange created event
         event::emit(ExchangeCreated {
-            exchange_address: creator_addr,
+            exchange_address: object_addr,
+            oracle_address: oracle_address,
             creator: creator_addr,
             usdc_address,
         });
 
-        creator_addr
+        (object_addr, oracle_address)
     }
 
     public fun close_position(
@@ -268,7 +279,8 @@ module options_exchange {
 
     fun get_quote_for_position(
         position: &Position,
-        marketplace_address: address
+        marketplace_address: address,
+        oracle_address: address
     ) : Quote {
         // get the current IV from the volatility marketplace
         let volatility_bps = volatility_marketplace::get_implied_volatility(
@@ -277,10 +289,10 @@ module options_exchange {
         );
 
         // get the underlying price from the oracle
-        let underlying_price = price_oracle::get_price(marketplace_address, position.asset_symbol);
+        let underlying_price = price_oracle::get_price(oracle_address, position.asset_symbol);
 
         // get the risk free rate from the oracle
-        let risk_free_rate_bps = price_oracle::get_price(marketplace_address, string::utf8(b"Rates.US10Y"));
+        let risk_free_rate_bps = price_oracle::get_price(oracle_address, string::utf8(b"Rates.US10Y"));
 
         price_position(
             position, 
@@ -301,7 +313,7 @@ module options_exchange {
         let trader_address = signer::address_of(trader);
         
         // quote the position to determine net debit and margin amounts
-        position.closing_quote = get_quote_for_position(position, marketplace_address);
+        position.closing_quote = get_quote_for_position(position, marketplace_address, exchange.oracle_address);
 
         // determine the profit or loss on the position
         let opening_debit = position.opening_quote.net_debit;
@@ -397,7 +409,7 @@ position.status = OrderStatus::CLOSED;
         exchange: &mut OptionsExchange
     ) {
         // quote the position to determine net debit and margin amounts
-        position.opening_quote = get_quote_for_position(position, marketplace_address);
+        position.opening_quote = get_quote_for_position(position, marketplace_address, exchange.oracle_address);
 
         // determine the amount required to open the position
         let net_user_amount_in = position.opening_quote.net_debit + 

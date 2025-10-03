@@ -139,6 +139,10 @@ module volatility_marketplace {
         let vault_address = staking_vault::create_vault(owner, usdc_address, max_borrow_percentage);
 
         // Create the new marketplace
+        let constructor_ref = object::create_object(creator_addr);
+        let object_signer = object::generate_signer(&constructor_ref);
+        let object_addr = signer::address_of(&object_signer);
+
         let marketplace = Marketplace {
             owner: creator_addr,
             market_counter: 0,
@@ -152,17 +156,17 @@ module volatility_marketplace {
         };
 
         // Store resources
-        move_to(owner, marketplace);
+        move_to(&object_signer, marketplace);
 
         // Emit marketplace created event
         event::emit(MarketplaceCreated {
-            marketplace_address: creator_addr,
+            marketplace_address: object_addr,
             owner: creator_addr,
             usdc_address,
             staking_vault_address: vault_address,
         });
 
-        creator_addr
+        object_addr
     }
 
     fun create_test_usdc_token(
