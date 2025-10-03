@@ -102,6 +102,92 @@ module staking_vault {
         borrow_fee: u64,
     }
 
+    // entry functions
+        // stake the amount of user tokens with the vault
+    public entry fun stake(
+        owner: &signer,
+        vault_address: address,
+        amount: u64  
+    ) acquires Vault {
+        let vault = borrow_global_mut<Vault>(vault_address);
+        
+        // transfer user usdc tokens into the vault
+        let usdc_metadata = object::address_to_object<Metadata>(vault.usdc_address);
+        let usdc_tokens = primary_fungible_store::withdraw(owner, usdc_metadata, amount);
+        primary_fungible_store::deposit(vault_address, usdc_tokens);
+
+        // update the vault staked amount
+        vault.usdc_staked_amount = vault.usdc_staked_amount + amount;
+        vault.usdc_claimable_amount = vault.usdc_claimable_amount + amount;
+
+        // increment the users staking balance
+        let owner_addr = signer::address_of(owner);
+        let user_balance = if (table::contains(&vault.staking_balances, owner_addr)) {
+            let current_balance = table::borrow_mut(&mut vault.staking_balances, owner_addr);
+            *current_balance = *current_balance + amount;
+            *current_balance
+        } else {
+            table::add(&mut vault.staking_balances, owner_addr, amount);
+            amount
+        };
+
+        // Emit staked event
+        event::emit(Staked {
+            vault_address,
+            user: owner_addr,
+            amount,
+            total_staked_amount: vault.usdc_staked_amount,
+            user_balance,
+        });
+    }
+
+    // unstake a given amount from the user balance. Reverts if the user does not have
+    // enought staked tokens to stake
+    public entry fun unstake(
+        owner: &signer,
+        vault_address: address,
+        amount: u64
+    ) acquires Vault, AccountRefs {
+        let vault = borrow_global_mut<Vault>(vault_address);
+        let owner_addr = signer::address_of(owner);
+        
+        // ensure the user has a balance
+        assert!(table::contains(&vault.staking_balances, owner_addr), error::not_found(E_INSUFFICIENT_BALANCE));
+        
+        // calculate amount to transfer
+        let amount_to_transfer = get_unstake_amount_internal(vault, owner_addr, amount);
+
+        // get current balance to check if sufficient
+        let current_balance_value = *table::borrow(&vault.staking_balances, owner_addr);
+        assert!(current_balance_value >= amount, error::not_found(E_INSUFFICIENT_BALANCE));
+
+        // transfer tokens back to the user in proportion to their stake
+        let usdc_metadata = object::address_to_object<Metadata>(vault.usdc_address);
+        let vault_signer = get_signer(vault_address);
+
+        let usdc_tokens = primary_fungible_store::withdraw(&vault_signer, usdc_metadata, amount_to_transfer);
+        primary_fungible_store::deposit(owner_addr, usdc_tokens);    
+
+        // update the users current balance
+        let current_balance = table::borrow_mut(&mut vault.staking_balances, owner_addr);
+        *current_balance = *current_balance - amount;
+        let remaining_balance = *current_balance;
+
+        // updated the vault staked amount
+        vault.usdc_staked_amount = vault.usdc_staked_amount - amount;
+        vault.usdc_claimable_amount = vault.usdc_claimable_amount - amount_to_transfer;
+
+        // Emit unstaked event
+        event::emit(Unstaked {
+            vault_address,
+            user: owner_addr,
+            amount_requested: amount,
+            amount_received: amount_to_transfer,
+            remaining_balance,
+            total_staked_amount: vault.usdc_staked_amount,
+        });
+    }
+
     // creates a new vault object that holds tokens and vault structs
     // this method should only be called from the Volatility Market during initialization
     public(friend) fun create_vault(
@@ -237,90 +323,7 @@ module staking_vault {
         });
     }
 
-    // stake the amount of user tokens with the vault
-    public fun stake(
-        owner: &signer,
-        vault_address: address,
-        amount: u64  
-    ) acquires Vault {
-        let vault = borrow_global_mut<Vault>(vault_address);
-        
-        // transfer user usdc tokens into the vault
-        let usdc_metadata = object::address_to_object<Metadata>(vault.usdc_address);
-        let usdc_tokens = primary_fungible_store::withdraw(owner, usdc_metadata, amount);
-        primary_fungible_store::deposit(vault_address, usdc_tokens);
 
-        // update the vault staked amount
-        vault.usdc_staked_amount = vault.usdc_staked_amount + amount;
-        vault.usdc_claimable_amount = vault.usdc_claimable_amount + amount;
-
-        // increment the users staking balance
-        let owner_addr = signer::address_of(owner);
-        let user_balance = if (table::contains(&vault.staking_balances, owner_addr)) {
-            let current_balance = table::borrow_mut(&mut vault.staking_balances, owner_addr);
-            *current_balance = *current_balance + amount;
-            *current_balance
-        } else {
-            table::add(&mut vault.staking_balances, owner_addr, amount);
-            amount
-        };
-
-        // Emit staked event
-        event::emit(Staked {
-            vault_address,
-            user: owner_addr,
-            amount,
-            total_staked_amount: vault.usdc_staked_amount,
-            user_balance,
-        });
-    }
-
-    // unstake a given amount from the user balance. Reverts if the user does not have
-    // enought staked tokens to stake
-    public fun unstake(
-        owner: &signer,
-        vault_address: address,
-        amount: u64
-    ) acquires Vault, AccountRefs {
-        let vault = borrow_global_mut<Vault>(vault_address);
-        let owner_addr = signer::address_of(owner);
-        
-        // ensure the user has a balance
-        assert!(table::contains(&vault.staking_balances, owner_addr), error::not_found(E_INSUFFICIENT_BALANCE));
-        
-        // calculate amount to transfer
-        let amount_to_transfer = get_unstake_amount_internal(vault, owner_addr, amount);
-
-        // get current balance to check if sufficient
-        let current_balance_value = *table::borrow(&vault.staking_balances, owner_addr);
-        assert!(current_balance_value >= amount, error::not_found(E_INSUFFICIENT_BALANCE));
-
-        // transfer tokens back to the user in proportion to their stake
-        let usdc_metadata = object::address_to_object<Metadata>(vault.usdc_address);
-        let vault_signer = get_signer(vault_address);
-
-        let usdc_tokens = primary_fungible_store::withdraw(&vault_signer, usdc_metadata, amount_to_transfer);
-        primary_fungible_store::deposit(owner_addr, usdc_tokens);    
-
-        // update the users current balance
-        let current_balance = table::borrow_mut(&mut vault.staking_balances, owner_addr);
-        *current_balance = *current_balance - amount;
-        let remaining_balance = *current_balance;
-
-        // updated the vault staked amount
-        vault.usdc_staked_amount = vault.usdc_staked_amount - amount;
-        vault.usdc_claimable_amount = vault.usdc_claimable_amount - amount_to_transfer;
-
-        // Emit unstaked event
-        event::emit(Unstaked {
-            vault_address,
-            user: owner_addr,
-            amount_requested: amount,
-            amount_received: amount_to_transfer,
-            remaining_balance,
-            total_staked_amount: vault.usdc_staked_amount,
-        });
-    }
 
 
     // given a user and vault, returns the current staking balance for the user

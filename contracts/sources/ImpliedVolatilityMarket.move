@@ -91,6 +91,85 @@ module implied_volatility_market {
         token_holders: vector<address>
     }
 
+    // public entry points
+    /// Perform a swap on the volatility market
+    /// swap_type: 0 = buy IV tokens (USDC -> IV), 1 = sell IV tokens (IV -> USDC)
+    public entry fun swap(
+        user: &signer,
+        market_addr: address,
+        swap_type: u8,
+        amount_in: u64
+    ) acquires VolatilityMarket, MarketRefs {
+        let market = borrow_global_mut<VolatilityMarket>(market_addr);
+        
+        swap_internal(user, market, market_addr, swap_type, amount_in);
+    }
+
+        // Opens a new short position for the given user by creating a new isolated margin account
+    // 1. Deposits collateral into the isolated margin account
+    // 2. Borrows IV tokens from the market
+    // 3. Swaps IV tokens for USDC
+    // - The user will need to repay the borrowed IV tokens to close the position. If the IV price
+    // falls, then they will close out at a profit, otherwise they will close out at a loss.
+    // - User balances can be liquidiated if the margin account is undercollateralized.
+    public entry fun open_short_position(
+        user: &signer,
+        market_addr: address,
+        usdc_collateral_amount: u64
+    ) acquires VolatilityMarket, MarketRefs {
+        let market = borrow_global_mut<VolatilityMarket>(market_addr);
+        let user_addr = signer::address_of(user);
+
+        // ensure the user has a margin account
+        let margin_account_address = ensure_margin_account_exists(market, user_addr);
+        let margin_account_signer = isolated_margin_account::get_signer(margin_account_address);
+
+        // transfer the usdc collateral amount to the margin account
+        let usdc_metadata = object::address_to_object<Metadata>(market.pool.usdc_address);
+        let usdc_tokens = primary_fungible_store::withdraw(user, usdc_metadata, usdc_collateral_amount);
+        primary_fungible_store::deposit(margin_account_address, usdc_tokens);
+        
+        // mint and iv tokens to margin account (borrow)
+        let quote = get_quote_internal(market);
+        let iv_token_amount = (usdc_collateral_amount * 1000000) / quote;
+        let iv_tokens = fungible_asset::mint(&market.pool.iv_token_refs.mint_ref, iv_token_amount);
+        
+        primary_fungible_store::deposit(margin_account_address, iv_tokens);
+
+        // Ensure the market has enough liquidity to handle the short position
+        // borrow usdc liquidity from the staking pool to facilitate the swap
+        // this will not alter the quote of the pool, but it will increase the USDC
+        // available to facilitate the margin sell. 
+        // This balance will be repaid when the user closes the position.
+        staking_vault::borrow_on_margin(
+            &margin_account_signer,
+            market_addr,
+            market.staking_vault_address,
+            usdc_collateral_amount
+        );
+
+        // Sell the tokens from the margin account
+        swap(&margin_account_signer, market_addr, 1, iv_token_amount);
+
+        // update the margin account balances
+        isolated_margin_account::record_new_borrow(
+            margin_account_address, 
+            iv_token_amount, 
+            usdc_collateral_amount 
+        );
+    }
+
+    public entry fun close_short_position(
+        user: &signer,
+        market_addr: address
+    ) acquires VolatilityMarket {
+        let market = borrow_global_mut<VolatilityMarket>(market_addr);
+        let user_addr = signer::address_of(user);
+
+        close_short_position_internal(market, user_addr);
+    }
+
+
     fun create_iv_token(
         object_signer: &signer,
         asset_symbol: string::String
@@ -316,6 +395,35 @@ module implied_volatility_market {
         }
     }
 
+    fun close_short_position_internal (
+        market: &mut VolatilityMarket,
+        user_with_short_position: address
+    ) {
+        let margin_account_address = *table::borrow(&market.isolated_margin_accounts, user_with_short_position);
+        let margin_account = isolated_margin_account::get_margin_account_state(margin_account_address);
+
+        // determine the required input amount to receive the desired output amount
+        let iv_units_borrowed = isolated_margin_account::get_iv_units_borrowed(&margin_account);
+        let amount_in = get_swap_amount_in_internal(0, iv_units_borrowed, market);
+
+        // transfer the input amount in USDC tokens to the vault
+        // we don't need to manually buy the IV tokens back, then sell from the vault since
+        // the price at this point is fixed. We can shortcut by calculating the USDC input
+        // and transferring it directly to the vault.
+        let usdc_metadata = object::address_to_object<Metadata>(market.pool.usdc_address);
+        let margin_account_signer = isolated_margin_account::get_signer(margin_account_address);
+        let usdc_tokens = primary_fungible_store::withdraw(&margin_account_signer, usdc_metadata, amount_in);
+        primary_fungible_store::deposit(market.staking_vault_address, usdc_tokens);
+
+        // transfer the remaining USDC from the margin account back to the user
+        // this amount represents their profit or loss on the position
+        let remaining_usdc = primary_fungible_store::balance(margin_account_address, usdc_metadata);
+        primary_fungible_store::transfer(&margin_account_signer, usdc_metadata, user_with_short_position, remaining_usdc);
+
+        // record the closing of the borrow
+        isolated_margin_account::close_borrow(margin_account_address);
+    }
+
     // Close the open short positions at the specified price
     // 1. Buy back IV tokens at the settlement price
     // 2. Repay the loaned USDC to the Vault
@@ -328,29 +436,8 @@ module implied_volatility_market {
 
         while (i < len) {
             let user_with_short_position = *vector::borrow(&market.margin_accounts, i);
-            let margin_account_address = *table::borrow(&market.isolated_margin_accounts, user_with_short_position);
-            let margin_account = isolated_margin_account::get_margin_account_state(margin_account_address);
 
-            // determine the required input amount to receive the desired output amount
-            let iv_units_borrowed = isolated_margin_account::get_iv_units_borrowed(&margin_account);
-            let amount_in = get_swap_amount_in_internal(0, iv_units_borrowed, market);
-
-            // transfer the input amount in USDC tokens to the vault
-            // we don't need to manually buy the IV tokens back, then sell from the vault since
-            // the price at this point is fixed. We can shortcut by calculating the USDC input
-            // and transferring it directly to the vault.
-            let usdc_metadata = object::address_to_object<Metadata>(market.pool.usdc_address);
-            let margin_account_signer = isolated_margin_account::get_signer(margin_account_address);
-            let usdc_tokens = primary_fungible_store::withdraw(&margin_account_signer, usdc_metadata, amount_in);
-            primary_fungible_store::deposit(market.staking_vault_address, usdc_tokens);
-
-            // transfer the remaining USDC from the margin account back to the user
-            // this amount represents their profit or loss on the position
-            let remaining_usdc = primary_fungible_store::balance(margin_account_address, usdc_metadata);
-            primary_fungible_store::transfer(&margin_account_signer, usdc_metadata, user_with_short_position, remaining_usdc);
-
-            // record the closing of the borrow
-            isolated_margin_account::close_borrow(margin_account_address);
+            close_short_position_internal(market, user_with_short_position);
 
             i = i + 1;
         }
@@ -441,11 +528,19 @@ module implied_volatility_market {
     fun get_quote_internal(
         market: &VolatilityMarket
     ) : u64 {
-        let factor = 1000000; // 10^6
+        let one_e_6 = 1000000; // 10^6
+        let amount = (market.pool.reserves.virtual_usdc_token_reserves * one_e_6) / market.pool.reserves.iv_token_reserves;
 
-        let quoteBig = (market.pool.reserves.virtual_usdc_token_reserves * factor) / market.pool.reserves.iv_token_reserves;
+        amount as u64
+    }
 
-        (quoteBig as u64)
+    #[view]
+    public fun get_reserves(
+        market_addr: address
+    ) : (u256, u256) acquires VolatilityMarket {
+        let market = borrow_global<VolatilityMarket>(market_addr);
+
+        (market.pool.reserves.virtual_usdc_token_reserves, market.pool.reserves.iv_token_reserves)
     }
 
     fun get_swap_amounts_for_settled_market(
@@ -671,18 +766,7 @@ module implied_volatility_market {
         }
     }
 
-    /// Perform a swap on the volatility market
-    /// swap_type: 0 = buy IV tokens (USDC -> IV), 1 = sell IV tokens (IV -> USDC)
-    public fun swap(
-        user: &signer,
-        market_addr: address,
-        swap_type: u8,
-        amount_in: u64
-    ): u64 acquires VolatilityMarket, MarketRefs {
-        let market = borrow_global_mut<VolatilityMarket>(market_addr);
-        
-        swap_internal(user, market, market_addr, swap_type, amount_in)
-    }
+    
 
     // Increment the users token balance by the given amount
     public fun store_token_holder(
@@ -692,61 +776,6 @@ module implied_volatility_market {
         if(!vector::contains(&market.token_holders, &user_address)){
             vector::push_back(&mut market.token_holders, user_address);
         }
-    }
-
-
-    // Opens a new short position for the given user by creating a new isolated margin account
-    // 1. Deposits collateral into the isolated margin account
-    // 2. Borrows IV tokens from the market
-    // 3. Swaps IV tokens for USDC
-    // - The user will need to repay the borrowed IV tokens to close the position. If the IV price
-    // falls, then they will close out at a profit, otherwise they will close out at a loss.
-    // - User balances can be liquidiated if the margin account is undercollateralized.
-    public fun open_short_position(
-        user: &signer,
-        market_addr: address,
-        usdc_collateral_amount: u64
-    ) acquires VolatilityMarket, MarketRefs {
-        let market = borrow_global_mut<VolatilityMarket>(market_addr);
-        let user_addr = signer::address_of(user);
-
-        // ensure the user has a margin account
-        let margin_account_address = ensure_margin_account_exists(market, user_addr);
-        let margin_account_signer = isolated_margin_account::get_signer(margin_account_address);
-
-        // transfer the usdc collateral amount to the margin account
-        let usdc_metadata = object::address_to_object<Metadata>(market.pool.usdc_address);
-        let usdc_tokens = primary_fungible_store::withdraw(user, usdc_metadata, usdc_collateral_amount);
-        primary_fungible_store::deposit(margin_account_address, usdc_tokens);
-        
-        // mint and iv tokens to margin account (borrow)
-        let quote = get_quote_internal(market);
-        let iv_token_amount = (usdc_collateral_amount * 1000000) / quote;
-        let iv_tokens = fungible_asset::mint(&market.pool.iv_token_refs.mint_ref, iv_token_amount);
-        
-        primary_fungible_store::deposit(margin_account_address, iv_tokens);
-
-        // Ensure the market has enough liquidity to handle the short position
-        // borrow usdc liquidity from the staking pool to facilitate the swap
-        // this will not alter the quote of the pool, but it will increase the USDC
-        // available to facilitate the margin sell. 
-        // This balance will be repaid when the user closes the position.
-        staking_vault::borrow_on_margin(
-            &margin_account_signer,
-            market_addr,
-            market.staking_vault_address,
-            usdc_collateral_amount
-        );
-
-        // Sell the tokens from the margin account
-        swap(&margin_account_signer, market_addr, 1, iv_token_amount);
-
-        // update the margin account balances
-        isolated_margin_account::record_new_borrow(
-            margin_account_address, 
-            iv_token_amount, 
-            usdc_collateral_amount 
-        );
     }
 
     // creates a new margin account for the user if it does not already exist

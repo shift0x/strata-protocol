@@ -79,7 +79,7 @@ script {
         volatility_marketplace::create_market(
             sender,
             string::utf8(b"BTC-USD"),
-            30 * ONE_E18,
+            (30 * ONE_E6) as u256,
             expiration_timestamp,
             marketplace_address
         );
@@ -87,7 +87,7 @@ script {
         volatility_marketplace::create_market(
             sender,
             string::utf8(b"ETH-USD"),
-            55 * ONE_E18,
+            (55 * ONE_E6) as u256,
             expiration_timestamp,
             marketplace_address
         );
@@ -95,7 +95,7 @@ script {
         volatility_marketplace::create_market(
             sender,
             string::utf8(b"APT-USD"),
-            75 * ONE_E18,
+            (75 * ONE_E6) as u256,
             expiration_timestamp,
             marketplace_address
         );

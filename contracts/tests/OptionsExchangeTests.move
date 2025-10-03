@@ -401,8 +401,26 @@ module marketplace::options_exchange_tests {
             legs
         );
 
+        let (
+            asset_symbol, 
+            leg_option_types, 
+            leg_option_sides, 
+            leg_option_amounts, 
+            leg_option_strike_prices, 
+            leg_option_expirations) = options_exchange::deconstruct_position(position);
+
         // Execute the trade to open the position
-        options_exchange::open_position(trader, marketplace_addr, exchange_address, position);
+        options_exchange::open_position(
+            trader, 
+            marketplace_addr, 
+            exchange_address, 
+            asset_symbol,
+            leg_option_types,
+            leg_option_sides,
+            leg_option_amounts,
+            leg_option_strike_prices,
+            leg_option_expirations
+        );
         
         // Get USDC metadata to check balances
         let usdc_metadata = volatility_marketplace::get_test_usdc_metadata(marketplace_addr);
@@ -504,9 +522,27 @@ module marketplace::options_exchange_tests {
             legs
         );
 
+        let (
+            asset_symbol, 
+            leg_option_types, 
+            leg_option_sides, 
+            leg_option_amounts, 
+            leg_option_strike_prices, 
+            leg_option_expirations) = options_exchange::deconstruct_position(position);
+
         // Execute the trade to open the position
-        options_exchange::open_position(trader, marketplace_addr, exchange_address, position);
-        
+        options_exchange::open_position(
+            trader, 
+            marketplace_addr, 
+            exchange_address, 
+            asset_symbol,
+            leg_option_types,
+            leg_option_sides,
+            leg_option_amounts,
+            leg_option_strike_prices,
+            leg_option_expirations
+        );
+
         // Get USDC metadata to check balances
         let usdc_metadata = volatility_marketplace::get_test_usdc_metadata(marketplace_addr);
         let trader_balance_after_open = primary_fungible_store::balance(trader_address, usdc_metadata);
@@ -605,9 +641,27 @@ module marketplace::options_exchange_tests {
             legs
         );
 
+        let (
+            asset_symbol, 
+            leg_option_types, 
+            leg_option_sides, 
+            leg_option_amounts, 
+            leg_option_strike_prices, 
+            leg_option_expirations) = options_exchange::deconstruct_position(position);
+
         // Execute the trade to open the position
-        options_exchange::open_position(trader, marketplace_addr, exchange_address, position);
-        
+        options_exchange::open_position(
+            trader, 
+            marketplace_addr, 
+            exchange_address, 
+            asset_symbol,
+            leg_option_types,
+            leg_option_sides,
+            leg_option_amounts,
+            leg_option_strike_prices,
+            leg_option_expirations
+        );
+
         // Get USDC metadata to check balances
         let usdc_metadata = volatility_marketplace::get_test_usdc_metadata(marketplace_addr);
         let trader_balance_after_open = primary_fungible_store::balance(trader_address, usdc_metadata);

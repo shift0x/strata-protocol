@@ -446,5 +446,11 @@ module volatility_marketplace {
 
         markets
     }
+
+    public fun get_market_address_from_metadata(
+        market: &MarketMetadata
+    ) : address {
+        return market.market_address
+    }
 }
 }

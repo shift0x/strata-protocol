@@ -173,6 +173,127 @@ module options_exchange {
         oracle_address: address,
     }
 
+/*
+struct PositionLeg has store, drop, copy {
+        // the type of the option (call or put)
+        option_type: OptionType,
+        // the side of the position (long or short)
+        side: Side,
+        // number of contracts (nonzero)
+        amount: u256,
+        // strike price expressed in the same base units as underlying_price
+        strike_price: u256,
+        // expiration timestamp (seconds since epoch)
+        expiration: u64
+    }
+    */
+
+    // entry functions
+    public entry fun open_position(
+        user: &signer,
+        marketplace_address: address,
+        exchange_address: address,
+        asset_symbol: String,
+        leg_option_types: vector<u8>,
+        leg_option_sides: vector<u8>,
+        leg_option_amounts: vector<u256>,
+        leg_option_strike_prices: vector<u256>,
+        leg_option_expirations: vector<u64>
+    ) acquires OptionsExchange {
+        let exchange = borrow_global_mut<OptionsExchange>(exchange_address);
+        let user_addr = signer::address_of(user);
+
+        // ensure the user exists
+        ensure_user_created(user_addr, exchange, exchange_address);
+
+        // construct position legs from component vectors
+        let legs = vector::empty<PositionLeg>();
+        let num_legs = vector::length(&leg_option_types);
+        let i = 0;
+        while (i < num_legs) {
+            let option_type = if (*vector::borrow(&leg_option_types, i) == 0) {
+                OptionType::CALL
+            } else {
+                OptionType::PUT
+            };
+            
+            let side = if (*vector::borrow(&leg_option_sides, i) == 0) {
+                Side::LONG
+            } else {
+                Side::SHORT
+            };
+            
+            let leg = create_position_leg(
+                option_type,
+                side,
+                *vector::borrow(&leg_option_amounts, i),
+                *vector::borrow(&leg_option_strike_prices, i),
+                *vector::borrow(&leg_option_expirations, i)
+            );
+            vector::push_back(&mut legs, leg);
+            i = i + 1;
+        };
+
+        // create the user position
+        let position = create_position(
+            exchange.position_counter + 1,
+            asset_symbol,
+            legs
+        );
+        position.trader_address = user_addr;
+
+        let user_positions_ref = table::borrow_mut<address, vector<u64>>(&mut exchange.user_position_lookup, user_addr);
+        vector::push_back(user_positions_ref, position.id);
+        
+        // update the position counter
+        exchange.position_counter = exchange.position_counter + 1;
+
+        // execute the trade
+        execute_open_position(user, &mut position, marketplace_address, exchange);
+
+        // Emit position opened event
+        event::emit(PositionOpened {
+            exchange_address,
+            position_id: position.id,
+            trader: position.trader_address,
+            asset_symbol: position.asset_symbol,
+            legs_count: vector::length(&position.legs) as u64,
+            net_debit: position.opening_quote.net_debit,
+            net_credit: position.opening_quote.net_credit,
+            initial_margin: position.opening_quote.initial_margin,
+            net_amount_required: position.opening_quote.net_debit + 
+                position.opening_quote.initial_margin - 
+                position.opening_quote.net_credit,
+        });
+
+        vector::push_back(&mut exchange.user_positions, position);
+    }
+
+    public entry fun close_position(
+        user: &signer,
+        marketplace_address: address,
+        exchange_address: address,
+        position_id: u64
+    ) acquires OptionsExchange {
+        let exchange = borrow_global_mut<OptionsExchange>(exchange_address);
+        let user_addr = signer::address_of(user);
+
+        // ensure the position exists
+        assert!(position_id <= exchange.position_counter, E_POSITION_NOT_FOUND);
+
+        let position = exchange.user_positions[position_id-1];
+
+        // ensure the position is open
+        assert!(position.status == OrderStatus::OPEN, E_POSITION_NOT_OPEN);
+
+        // ensure the position is owned by the user
+        assert!(position.trader_address == user_addr, E_UNAUTHORIZED);
+
+        // close the position
+        execute_close_position(user, exchange, &mut position, marketplace_address, exchange_address);
+    }
+
+
     public fun create_exchange(
         owner: &signer,
         usdc_address: address
@@ -209,73 +330,10 @@ module options_exchange {
         (object_addr, oracle_address)
     }
 
-    public fun close_position(
-        user: &signer,
-        marketplace_address: address,
-        exchange_address: address,
-        position_id: u64
-    ) acquires OptionsExchange {
-        let exchange = borrow_global_mut<OptionsExchange>(exchange_address);
-        let user_addr = signer::address_of(user);
-
-        // ensure the position exists
-        assert!(position_id <= exchange.position_counter, E_POSITION_NOT_FOUND);
-
-        let position = exchange.user_positions[position_id-1];
-
-        // ensure the position is open
-        assert!(position.status == OrderStatus::OPEN, E_POSITION_NOT_OPEN);
-
-        // ensure the position is owned by the user
-        assert!(position.trader_address == user_addr, E_UNAUTHORIZED);
-
-        // close the position
-        execute_close_position(user, exchange, &mut position, marketplace_address, exchange_address);
-    }
+   
 
 
-    public fun open_position(
-        user: &signer,
-        marketplace_address: address,
-        exchange_address: address,
-        position: Position
-    ) acquires OptionsExchange {
-        let exchange = borrow_global_mut<OptionsExchange>(exchange_address);
-        let user_addr = signer::address_of(user);
-
-        // ensure the user exists
-        ensure_user_created(user_addr, exchange, exchange_address);
-
-        // create the user position
-        position.id = exchange.position_counter + 1;
-        position.trader_address = user_addr;
-
-        let user_positions_ref = table::borrow_mut<address, vector<u64>>(&mut exchange.user_position_lookup, user_addr);
-        vector::push_back(user_positions_ref, position.id);
-        
-        // update the position counter
-        exchange.position_counter = exchange.position_counter + 1;
-
-        // execute the trade
-        execute_open_position(user, &mut position, marketplace_address, exchange);
-
-        // Emit position opened event
-        event::emit(PositionOpened {
-            exchange_address,
-            position_id: position.id,
-            trader: position.trader_address,
-            asset_symbol: position.asset_symbol,
-            legs_count: vector::length(&position.legs) as u64,
-            net_debit: position.opening_quote.net_debit,
-            net_credit: position.opening_quote.net_credit,
-            initial_margin: position.opening_quote.initial_margin,
-            net_amount_required: position.opening_quote.net_debit + 
-                position.opening_quote.initial_margin - 
-                position.opening_quote.net_credit,
-        });
-
-        vector::push_back(&mut exchange.user_positions, position);
-    }
+   
 
     fun get_quote_for_position(
         position: &Position,
@@ -387,8 +445,8 @@ module options_exchange {
         };
         
 
-// update the position status
-position.status = OrderStatus::CLOSED;
+        // update the position status
+        position.status = OrderStatus::CLOSED;
 
         // Emit position closed event
         event::emit(PositionClosed {
@@ -469,6 +527,41 @@ position.status = OrderStatus::CLOSED;
         });
 
         result
+    }
+
+    public fun deconstruct_position(
+        position: Position
+    ): (String, vector<u8>, vector<u8>, vector<u256>, vector<u256>, vector<u64>) {
+        let asset_symbol = position.asset_symbol;
+        let legs = &position.legs;
+        let num_legs = vector::length(legs);
+        
+        let leg_option_types = vector::empty<u8>();
+        let leg_option_sides = vector::empty<u8>();
+        let leg_option_amounts = vector::empty<u256>();
+        let leg_option_strike_prices = vector::empty<u256>();
+        let leg_option_expirations = vector::empty<u64>();
+        
+        let i = 0;
+        while (i < num_legs) {
+            let leg = vector::borrow(legs, i);
+            
+            // Convert OptionType to u8: CALL = 0, PUT = 1
+            let option_type_u8 = if (leg.option_type == OptionType::CALL) { 0u8 } else { 1u8 };
+            vector::push_back(&mut leg_option_types, option_type_u8);
+            
+            // Convert Side to u8: LONG = 0, SHORT = 1
+            let side_u8 = if (leg.side == Side::LONG) { 0u8 } else { 1u8 };
+            vector::push_back(&mut leg_option_sides, side_u8);
+            
+            vector::push_back(&mut leg_option_amounts, leg.amount);
+            vector::push_back(&mut leg_option_strike_prices, leg.strike_price);
+            vector::push_back(&mut leg_option_expirations, leg.expiration);
+            
+            i = i + 1;
+        };
+        
+        (asset_symbol, leg_option_types, leg_option_sides, leg_option_amounts, leg_option_strike_prices, leg_option_expirations)
     }
 
     // ------------------------------------------------------------------------
