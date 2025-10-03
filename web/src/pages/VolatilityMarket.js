@@ -1,25 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useVolatilityMarket } from '../providers/VolatilityMarketProvider';
-import { formatCurrency, parseCurrency, isValidCurrencyAmount } from '../lib/currency';
+import { formatCurrency, isValidCurrencyAmount } from '../lib/currency';
+import { getMarkets, getUserPosition } from '../lib/volatilityMarketplace';
+import { calculateTimeToSettlement, formatTime } from '../lib/time';
+import { useWallet } from "@aptos-labs/wallet-adapter-react";
+
 import './VolatilityMarket.css';
 
 function VolatilityMarket() {
   const {
-    markets,
-    selectedMarket,
-    setSelectedMarket,
-    currentMarket,
-    formattedTimeToSettlement,
-    calculateTimeToSettlement,
-    formatTime,
     getOpenPositions,
     getClosedPositions,
     closePosition,
     calculateSwapOutput,
-    getCurrentIVPrice,
     getCurrentMarketData
   } = useVolatilityMarket();
   
+  const { connected, account } = useWallet();
+  const [markets, setMarkets] = useState([]);
+  const [selectedMarket, setSelectedMarket] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [showOpenPositions, setShowOpenPositions] = useState(true);
   const [localTimeToSettlement, setLocalTimeToSettlement] = useState(null);
@@ -30,6 +29,26 @@ function VolatilityMarket() {
   const chartRef = useRef(null);
   const chartWidget = useRef(null);
   const timerRef = useRef(null);
+
+  // Derive currentMarket from markets and selectedMarket
+  const currentMarket = markets.find(market => market.name === selectedMarket);
+
+  // load markets, once at load
+  useEffect(() => {
+    const getMarketData = async () => {
+      const markets = await getMarkets();
+
+      setMarkets(markets);
+      
+      // Set default selected market to first market if available
+      if (markets.length > 0 && !selectedMarket) {
+        setSelectedMarket(markets[0].name);
+      }
+    }
+
+    getMarketData();
+    
+  }, [])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -47,17 +66,6 @@ function VolatilityMarket() {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isDropdownOpen]);
-
-  // Function to get TradingView symbol based on market
-  const getSymbolForMarket = (market) => {
-    const symbolMap = {
-      'APT-USD (30d)': 'BINANCE:APTUSDT',
-      'BTC-USD (30d)': 'BINANCE:BTCUSDT',
-      'ETH-USD (30d)': 'BINANCE:ETHUSDT',
-      'SOL-USD (30d)': 'BINANCE:SOLUSDT'
-    };
-    return symbolMap[market] || 'BINANCE:BTCUSDT';
-  };
 
   // TradingView chart initialization
   useEffect(() => {
@@ -77,7 +85,7 @@ function VolatilityMarket() {
         chartWidget.current = new window.TradingView.widget({
           width: "100%",
           height: "100%",
-          symbol: getSymbolForMarket(selectedMarket),
+          symbol: currentMarket?.chartSymbol || "BINANCE:BTCUSDT",
           interval: "1D",
           timezone: "ETC/UTC",
           theme: "dark",
@@ -153,18 +161,28 @@ function VolatilityMarket() {
     setIsValidAmount(true);
   }, [selectedMarket]);
 
+  // Update user positions when the market changes
+  useEffect(() => {
+    if(!connected || !currentMarket) return;
+
+    const accountAddress = account.address.bcsToHex().toString();
+    const marketAddress = currentMarket.marketAddress;
+
+    getUserPosition(marketAddress, accountAddress);
+  }, [currentMarket, account]);
+
   const handleMarketSelect = (market) => {
     setSelectedMarket(market.name);
     setIsDropdownOpen(false);
   };
 
   // Get positions and market data from provider
-  const openPositions = getOpenPositions();
-  const closedPositions = getClosedPositions();
-  const marketData = getCurrentMarketData();
+  const openPositions = getOpenPositions(selectedMarket);
+  const closedPositions = getClosedPositions(selectedMarket);
+  const marketData = getCurrentMarketData(selectedMarket);
 
   const handleClosePosition = (positionId) => {
-    closePosition(positionId);
+    closePosition(positionId, selectedMarket);
     // In a real app, you might want to refresh the data or show a confirmation
     alert(`Position ${positionId} closed successfully!`);
   };
@@ -245,7 +263,7 @@ function VolatilityMarket() {
             <div className="status-left">
               <span className="status-label">Time to settlement</span>
               <span className="status-value">
-                {localTimeToSettlement ? formatTime(localTimeToSettlement) : formattedTimeToSettlement}
+                {localTimeToSettlement ? formatTime(localTimeToSettlement) : '—'}
               </span>
             </div>
             <div className="status-right">
@@ -256,9 +274,9 @@ function VolatilityMarket() {
             </div>
         </div>
       </div>
-      <h1 className="page-header">{currentMarket.pair} Volatility Prediction Market</h1>
+      <h1 className="page-header">{currentMarket?.pair || 'Loading...'} Volatility Prediction Market</h1>
       <p className="hero-subtitle wide">
-        Trade predictions on {currentMarket.pair}'s 30-day realized volatility. Go long if you expect higher volatility, short if you expect lower. 
+        Trade predictions on {currentMarket?.pair || 'the selected market'}'s realized volatility. Go long if you expect higher volatility, short if you expect lower. 
         Markets settle to the actual realized volatility measured over the settlement period using Pyth oracle price data.
       </p>
 

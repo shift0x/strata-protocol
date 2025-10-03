@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 
 const VolatilityMarketContext = createContext();
 
@@ -10,47 +10,10 @@ export const useVolatilityMarket = () => {
   return context;
 };
 
-export const VolatilityMarketProvider = ({ children }) => {
-  const [selectedMarket, setSelectedMarket] = useState('APT-USD (30d)');
-  const [userPositions, setUserPositions] = useState({
-    open: [],
-    closed: []
-  });
-  
-  // Available markets with their data
-  const markets = [
-    {
-      id: 'APT-USD',
-      name: 'APT-USD (30d)',
-      pair: 'APT-USD',
-      period: '30d',
-      expirationDate: new Date('2025-10-15T13:30:00Z'), // 15 days from now
-    },
-    {
-      id: 'BTC-USD',
-      name: 'BTC-USD (30d)',
-      pair: 'BTC-USD',
-      period: '30d',
-      expirationDate: new Date('2025-10-12T10:17:42Z'), // 12 days from now
-    },
-    {
-      id: 'ETH-USD',
-      name: 'ETH-USD (30d)',
-      pair: 'ETH-USD',
-      period: '30d',
-      expirationDate: new Date('2025-10-18T16:45:00Z'), // 18 days from now
-    },
-    {
-      id: 'SOL-USD',
-      name: 'SOL-USD (30d)',
-      pair: 'SOL-USD',
-      period: '30d',
-      expirationDate: new Date('2025-10-20T09:20:30Z'), // 20 days from now
-    }
-  ];
 
-  // Get current market data
-  const currentMarket = markets.find(market => market.name === selectedMarket) || markets[1]; // Default to BTC-USD
+
+
+export const VolatilityMarketProvider = ({ children }) => {
 
   // Calculate time to settlement
   const [timeToSettlement, setTimeToSettlement] = useState({
@@ -60,32 +23,15 @@ export const VolatilityMarketProvider = ({ children }) => {
     seconds: 0
   });
 
-  const calculateTimeToSettlement = (expirationDate) => {
-    const now = new Date();
-    const timeDiff = expirationDate.getTime() - now.getTime();
-    
-    if (timeDiff <= 0) {
-      return { days: 0, hours: 0, minutes: 0, seconds: 0 };
-    }
-
-    const days = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((timeDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((timeDiff % (1000 * 60)) / 1000);
-
-    return { days, hours, minutes, seconds };
-  };
+ 
 
   
 
-  const formatTime = (time) => {
-    const { days, hours, minutes, seconds } = time;
-    return `${days}d ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-  };
+
 
   // Mock data for user positions - in a real app this would come from an API
   const mockUserPositions = {
-    'APT-USD (30d)': {
+    'APT-USD': {
       open: [
         {
           id: 1,
@@ -96,7 +42,7 @@ export const VolatilityMarketProvider = ({ children }) => {
           pnl: 127.50,
           pnlPercentage: 4.6,
           timestamp: '2024-03-15 10:30',
-          market: 'APT-USD (30d)'
+          market: 'APT-USD'
         },
         {
           id: 2,
@@ -107,7 +53,7 @@ export const VolatilityMarketProvider = ({ children }) => {
           pnl: -42.80,
           pnlPercentage: -2.1,
           timestamp: '2024-03-14 14:20',
-          market: 'APT-USD (30d)'
+          market: 'APT-USD'
         }
       ],
       closed: [
@@ -121,7 +67,7 @@ export const VolatilityMarketProvider = ({ children }) => {
           pnlPercentage: 7.7,
           timestamp: '2024-03-12 09:15',
           closedAt: '2024-03-13 16:45',
-          market: 'APT-USD (30d)'
+          market: 'APT-USD'
         },
         {
           id: 4,
@@ -133,11 +79,11 @@ export const VolatilityMarketProvider = ({ children }) => {
           pnlPercentage: -3.5,
           timestamp: '2024-03-10 11:20',
           closedAt: '2024-03-11 13:30',
-          market: 'APT-USD (30d)'
+          market: 'APT-USD'
         }
       ]
     },
-    'BTC-USD (30d)': {
+    'BTC-USD': {
       open: [
         {
           id: 5,
@@ -148,12 +94,12 @@ export const VolatilityMarketProvider = ({ children }) => {
           pnl: 270.00,
           pnlPercentage: 5.2,
           timestamp: '2024-03-16 08:45',
-          market: 'BTC-USD (30d)'
+          market: 'BTC-USD'
         }
       ],
       closed: []
     },
-    'ETH-USD (30d)': {
+    'ETH-USD': {
       open: [],
       closed: [
         {
@@ -166,28 +112,31 @@ export const VolatilityMarketProvider = ({ children }) => {
           pnlPercentage: 7.6,
           timestamp: '2024-03-08 15:30',
           closedAt: '2024-03-09 11:15',
-          market: 'ETH-USD (30d)'
+          market: 'ETH-USD'
         }
       ]
     },
-    'SOL-USD (30d)': {
+    'SOL-USD': {
       open: [],
       closed: []
     }
   };
 
-  // Get user positions for the selected market
-  const getUserPositions = (marketName = selectedMarket) => {
-    return mockUserPositions[marketName] || { open: [], closed: [] };
+  // Get user positions for a market
+  const getUserPositions = (marketName) => {
+    if (!marketName) return { open: [], closed: [] };
+    // Extract pair from market name (e.g., "APT-USD (Oct 15)" -> "APT-USD")
+    const pair = marketName.split(' ')[0] || '';
+    return mockUserPositions[pair] || { open: [], closed: [] };
   };
 
-  // Get open positions for the selected market
-  const getOpenPositions = (marketName = selectedMarket) => {
+  // Get open positions for a market
+  const getOpenPositions = (marketName) => {
     return getUserPositions(marketName).open;
   };
 
-  // Get closed positions for the selected market
-  const getClosedPositions = (marketName = selectedMarket) => {
+  // Get closed positions for a market
+  const getClosedPositions = (marketName) => {
     return getUserPositions(marketName).closed;
   };
 
@@ -202,17 +151,19 @@ export const VolatilityMarketProvider = ({ children }) => {
   };
 
   // Calculate total P&L for a market
-  const getMarketPnL = (marketName = selectedMarket) => {
+  const getMarketPnL = (marketName) => {
+    if (!marketName) return 0;
     const positions = getUserPositions(marketName);
     const totalPnL = [...positions.open, ...positions.closed].reduce((sum, position) => sum + position.pnl, 0);
     return totalPnL;
   };
 
   // Close a position
-  const closePosition = (positionId) => {
+  const closePosition = (positionId, marketName) => {
     // In a real app, this would make an API call
     // For now, we'll just move the position from open to closed
-    const currentMarketPositions = getUserPositions();
+    if (!marketName) return null;
+    const currentMarketPositions = getUserPositions(marketName);
     const positionToClose = currentMarketPositions.open.find(pos => pos.id === positionId);
     
     if (positionToClose) {
@@ -272,44 +223,57 @@ export const VolatilityMarketProvider = ({ children }) => {
   };
 
   // Get current market price for IV tokens
-  const getCurrentIVPrice = (marketName = selectedMarket) => {
+  const getCurrentIVPrice = (marketName) => {
+    if (!marketName) return 1.000;
     // Mock prices by market - in real app this would come from price feeds
+    const pair = marketName.split(' ')[0] || '';
     const marketPrices = {
-      'APT-USD (30d)': 1.047,
-      'BTC-USD (30d)': 1.125,
-      'ETH-USD (30d)': 0.985,
-      'SOL-USD (30d)': 1.200
+      'APT-USD': 1.047,
+      'BTC-USD': 1.125,
+      'ETH-USD': 0.985,
+      'SOL-USD': 1.200
     };
     
-    return marketPrices[marketName] || 1.000;
+    return marketPrices[pair] || 1.000;
   };
 
   // Get current market data including IV price and change
-  const getCurrentMarketData = (marketName = selectedMarket) => {
+  const getCurrentMarketData = (marketName) => {
+    if (!marketName) {
+      return {
+        currentIV: 45.0,
+        dailyChange: 0.0,
+        markIV: 45.0,
+        historicalVol: 45.0,
+        tokenPrice: 1.000
+      };
+    }
+    
     // Mock market data - in real app this would come from market data APIs
+    const pair = marketName.split(' ')[0] || '';
     const marketData = {
-      'APT-USD (30d)': {
+      'APT-USD': {
         currentIV: 47.3,
         dailyChange: 2.1,
         markIV: 47.3,
         historicalVol: 42.8,
         tokenPrice: 1.047
       },
-      'BTC-USD (30d)': {
+      'BTC-USD': {
         currentIV: 52.8,
         dailyChange: -1.4,
         markIV: 52.8,
         historicalVol: 55.2,
         tokenPrice: 1.125
       },
-      'ETH-USD (30d)': {
+      'ETH-USD': {
         currentIV: 38.9,
         dailyChange: 3.7,
         markIV: 38.9,
         historicalVol: 35.1,
         tokenPrice: 0.985
       },
-      'SOL-USD (30d)': {
+      'SOL-USD': {
         currentIV: 61.2,
         dailyChange: 0.8,
         markIV: 61.2,
@@ -318,7 +282,7 @@ export const VolatilityMarketProvider = ({ children }) => {
       }
     };
     
-    return marketData[marketName] || {
+    return marketData[pair] || {
       currentIV: 45.0,
       dailyChange: 0.0,
       markIV: 45.0,
@@ -328,14 +292,6 @@ export const VolatilityMarketProvider = ({ children }) => {
   };
 
   const value = {
-    markets,
-    selectedMarket,
-    setSelectedMarket,
-    currentMarket,
-    timeToSettlement,
-    formatTime,
-    formattedTimeToSettlement: formatTime(timeToSettlement),
-    calculateTimeToSettlement,
     // Position methods
     getUserPositions,
     getOpenPositions,
