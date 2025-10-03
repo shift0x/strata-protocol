@@ -106,6 +106,29 @@ module volatility_marketplace {
         usdc_address: address,
     }
 
+    // entry functions
+        // Mint TestUSDC tokens to the sender
+    public entry fun mint_test_usdc(
+        amount: u64,
+        to: address,
+        marketplace_address: address
+    ) acquires Marketplace {
+        let marketplace = borrow_global<Marketplace>(marketplace_address);
+        
+        // Mint tokens using the mint ref
+        let tokens = fungible_asset::mint(&marketplace.test_usdc_refs.mint_ref, amount);
+        
+        // Deposit tokens to the sender
+        primary_fungible_store::deposit(to, tokens);
+
+        // Emit USDC minted event
+        event::emit(USDCMinted {
+            recipient: to,
+            amount,
+            marketplace_address,
+        });
+    }
+
     // Helper function to convert u64 to decimal string
     fun u64_to_string(value: u64): string::String {
         if (value == 0) {
@@ -320,27 +343,7 @@ module volatility_marketplace {
         });
     }
 
-    // Mint TestUSDC tokens to the sender
-    public fun mint_test_usdc(
-        amount: u64,
-        to: address,
-        marketplace_address: address
-    ) acquires Marketplace {
-        let marketplace = borrow_global<Marketplace>(marketplace_address);
-        
-        // Mint tokens using the mint ref
-        let tokens = fungible_asset::mint(&marketplace.test_usdc_refs.mint_ref, amount);
-        
-        // Deposit tokens to the sender
-        primary_fungible_store::deposit(to, tokens);
 
-        // Emit USDC minted event
-        event::emit(USDCMinted {
-            recipient: to,
-            amount,
-            marketplace_address,
-        });
-    }
 
     #[view]
     public fun get_test_usdc_metadata(marketplace_address: address): Object<Metadata> acquires Marketplace {
