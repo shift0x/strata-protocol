@@ -17,6 +17,10 @@ The goal of the market is to "predict" the realized volatility of an asset over 
 - Shorting is supported by "borrowing" IV tokens, then selling them in the pool. Participants close the short position by buying back the owed IV tokens
 - Short positions can be liquidated by anyone ones the health score is below the required threshold. The liquidator earns a fee for this service
 
+**Future Work**
+Currently markets are settled using off-chain calculations of historical volatility. Participants need to trust that the market owner is not manipulating the data. In the future, we plan to push this calculation on-chain and instead use a keeper network to submit the datapoints from the pyth feed that will go into the calculation. The contract will ensure the datapoints provided are within the desired range and expected span to settle markets.
+
+
 ## On-Chain Option Pricing Model
 
 The on-chain option pricing model is what allows for trustless execution of option contracts. On-chain pricing allows for developers to build financial products backed with options in a way that has yet to be explored on-chain.
@@ -27,6 +31,52 @@ With the model, we also produce option greeks which will be useful for advanced 
 
 ## Trustless Order Execution
 
-When users or contracts wish to execute an option trade. They submit an intent to the marketplace contract, which publishes an event detailing the trade intent.
+When users or contracts wish to execute an option trade, the liquidity from stakers is used to take the other side of the trade. This allows instant execution for option and volatility market trades.
 
-Listeners to the event submit the required pricing information from the pyth oracle required to price the option contracts and execute the order. Participants receive a transaction fee for this service
+This functionality does open up the possibility of front-running orders. To mitigate this, the market charges 1% transaction fee and markets are currently limited to markets that are sponsored by Aptos, this ensures a 15s heartbeat.
+
+**Future Work**
+In the future, the plan is to implement a keeper network where intents are submitted on chain, capturing the asset to be traded and the required data feeds to do an accurate to the second pricing. Keepers will be responsible for publishing aptos price feeds to the execution contract, where it will check that the price update is within a given price threshold (~1.5sec).
+
+The contract will then use this price data to do option pricing and execute trades.
+
+This functionality would open up option trading and volatility markets on the entire collection of markets supported by Pyth.
+
+## Development Setup
+
+### Prerequisites
+
+- Node.js and npm/yarn
+- Aptos CLI
+
+### Running the Web Application
+
+To run the React frontend locally:
+
+```bash
+cd web
+npm install
+npm start
+```
+
+The application will be available at `http://localhost:3000`.
+
+Available scripts:
+- `npm start` - Start development server
+- `npm build` - Build for production
+
+### Running Contract Tests
+
+To run the Move contract tests:
+
+```bash
+cd contracts
+aptos move test
+```
+
+To compile the contracts:
+
+```bash
+cd contracts
+aptos move compile
+```
