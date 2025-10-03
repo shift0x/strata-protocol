@@ -15,7 +15,7 @@ The goal of the market is to "predict" the realized volatility of an asset over 
 - Markets mint new tokens to represent the IV prediction. The open price for the tokens is the current HV.
 - Participants can go long/short IV
 - Shorting is supported by "borrowing" IV tokens, then selling them in the pool. Participants close the short position by buying back the owed IV tokens
-- Short positions can be liquidated by anyone ones the health score is below the required threshold. The liquidator earns a fee for this service
+- Short positions can be liquidated by anyone ones the health score is below the required threshold. The liquidator earns a fee for this service (future)
 
 **Future Work**
 
