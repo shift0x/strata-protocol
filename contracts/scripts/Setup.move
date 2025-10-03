@@ -30,11 +30,13 @@ script {
         let pyth_ethusdc_identifier = x"ca80ba6dc32e08d06f1aa886011eed1d77c77be9eb761cc10d72b7d0a2fd57a6";
         
         // risk free interest rate
-        price_oracle::store_price_identifier(
+        // mocking this rate, since it's not available on testnet
+        let us10y_price = (5 * ONE_E18)/100; // 5%
+        price_oracle::set_mock_price(
             sender,
             oracle_address,
             string::utf8(b"Rates.US10Y"),
-            pyth_rates_us10y_identifier
+            (5 * ONE_E18)/100 // 5%
         );
 
         // BTC

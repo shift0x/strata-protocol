@@ -15,6 +15,17 @@ module price_oracle {
     // Error codes
     const E_ONLY_OWNER: u64 = 1;
 
+    // Helper function to calculate 10^n
+    fun power_of_10(exponent: u8): u256 {
+        let result = 1u256;
+        let i = 0u8;
+        while (i < exponent) {
+            result = result * 10u256;
+            i = i + 1;
+        };
+        result
+    }
+
     // Events
     #[event]
     struct OracleCreated has drop, store {
@@ -93,6 +104,7 @@ module price_oracle {
 
     // use the pyth price identifier to get the price of an asset
     // if a mock price exists, then return that instead
+    #[view]
     public fun get_price(
         oracle_address: address,
         asset_symbol: string::String
@@ -112,9 +124,21 @@ module price_oracle {
             
             let pyth_price = pyth::get_price(price_id);
 
-            let i64_price = price::get_price(&pyth_price);
-
-            i64::get_magnitude_if_positive(&i64_price) as u256
+            let asset_price = price::get_price(&pyth_price);
+            let exponent = price::get_expo(&pyth_price);
+            let i64_price_magnitude = i64::get_magnitude_if_positive(&asset_price) as u256;
+            
+            // Apply 18 - exponent to get price in 18 decimals
+            let expo_value = i64::get_magnitude_if_negative(&exponent);
+            let decimal_adjustment = 18 - expo_value;
+            
+            
+            if (decimal_adjustment >= 0) {
+                let multiplier = power_of_10((decimal_adjustment as u8));
+                i64_price_magnitude * multiplier
+            } else {
+                i64_price_magnitude
+            }
         }
     }
 }

@@ -426,7 +426,7 @@ module implied_volatility_market {
 
         if(remaining_usdc > 0){
             primary_fungible_store::transfer(&margin_account_signer, usdc_metadata, user_with_short_position, remaining_usdc);
-        }
+        };
         
         // record the closing of the borrow
         isolated_margin_account::close_borrow(margin_account_address);
