@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { formatCurrency, isValidCurrencyAmount, parseCurrency } from '../lib/currency';
-import { openOptionPosition } from '../lib/optionsExchange';
+import { openOptionPosition, getUserPositions } from '../lib/optionsExchange';
+import { getAssetPrice } from '../lib/pyth';
 import './OptionsPage.css';
 
 function OptionsPage() {
-  const { connected, signAndSubmitTransaction } = useWallet();
+  const { connected, signAndSubmitTransaction, account } = useWallet();
   
   // State for multi-leg option configuration
-  const [selectedAsset, setSelectedAsset] = useState('BTC');
+  const [selectedAsset, setSelectedAsset] = useState('BTC-USD');
   const [legs, setLegs] = useState([
     {
       id: 1,
@@ -17,16 +18,74 @@ function OptionsPage() {
       expirationDays: '7',
       amount: '',
       isValidAmount: true,
+      isValidStrike: true,
       side: 'buy' // 'buy' or 'sell'
     }
   ]);
   
-  // Mock data for available assets
+  // Available assets
   const assets = [
-    { symbol: 'BTC-USD', name: 'Bitcoin', price: 67500, change: '+2.1%' },
-    { symbol: 'ETH-USD', name: 'Ethereum', price: 3850, change: '+1.8%' },
-    { symbol: 'APT-USD', name: 'Aptos', price: 12.45, change: '+4.2%' },
+    { symbol: 'BTC-USD', name: 'Bitcoin' },
+    { symbol: 'ETH-USD', name: 'Ethereum' },
+    { symbol: 'APT-USD', name: 'Aptos' },
   ];
+
+  const [assetPrices, setAssetPrices] = useState({});
+  
+  // Fetch asset prices
+  useEffect(() => {
+    const fetchPrices = async () => {
+      try {
+        const pricePromises = assets.map(async (asset) => {
+          const symbol = asset.symbol.replace('-', '');
+          const price = await getAssetPrice(symbol);
+          return { symbol: asset.symbol, price };
+        });
+        
+        const prices = await Promise.all(pricePromises);
+        const priceMap = {};
+        prices.forEach(({ symbol, price }) => {
+          priceMap[symbol] = price;
+        });
+        setAssetPrices(priceMap);
+      } catch (error) {
+        console.error('Error fetching asset prices:', error);
+      }
+    };
+
+    fetchPrices();
+  }, []);
+
+  // Clear option legs when asset changes
+  useEffect(() => {
+    setLegs([{
+      id: 1,
+      optionType: 'call',
+      strikePrice: '',
+      expirationDays: '7',
+      amount: '',
+      isValidAmount: true,
+      isValidStrike: true,
+      side: 'buy'
+    }]);
+  }, [selectedAsset]);
+
+  // Fetch user positions when connected user changes
+  useEffect(() => {
+    const fetchUserPositions = async () => {
+      if (connected && account?.address) {
+        try {
+          const accountAddress = account.address.bcsToHex().toString();
+          const positions = await getUserPositions(accountAddress);
+          console.log('User positions:', positions);
+        } catch (error) {
+          console.error('Error fetching user positions:', error);
+        }
+      }
+    };
+
+    fetchUserPositions();
+  }, [connected, account?.address]);
   
   // Mock positions data
   const [userPositions] = useState([
@@ -66,6 +125,7 @@ function OptionsPage() {
         expirationDays: '7',
         amount: '',
         isValidAmount: true,
+        isValidStrike: true,
         side: 'buy'
       };
       setLegs([...legs, newLeg]);
@@ -112,6 +172,45 @@ function OptionsPage() {
     updateLeg(legId, 'isValidAmount', isValid);
   };
 
+  const handleStrikePriceChange = (legId, e) => {
+    const inputValue = e.target.value;
+    
+    // Use the currency library to format
+    const formatted = formatCurrency(inputValue);
+    
+    // Update the leg with the formatted input
+    updateLeg(legId, 'strikePrice', formatted);
+    
+    // Use the currency library to validate
+    const isValid = inputValue === '' || isValidCurrencyAmount(formatted);
+    updateLeg(legId, 'isValidStrike', isValid);
+  };
+
+  const handleQuickStrike = (legId, percentage) => {
+    const currentPrice = assetPrices[selectedAsset];
+    if (!currentPrice) return;
+
+    const leg = legs.find(l => l.id === legId);
+    if (!leg) return;
+
+    let strikePrice;
+    
+    if (leg.optionType === 'call') {
+      // For calls: ITM = below current, OTM = above current
+      strikePrice = currentPrice * (1 + percentage / 100);
+    } else {
+      // For puts: ITM = above current, OTM = below current  
+      strikePrice = currentPrice * (1 - percentage / 100);
+    }
+
+    // Round to nearest $5
+    strikePrice = Math.round(strikePrice / 5) * 5;
+
+    const formatted = formatCurrency(strikePrice.toString());
+    updateLeg(legId, 'strikePrice', formatted);
+    updateLeg(legId, 'isValidStrike', true);
+  };
+
   // Strategy calculation placeholder - will be replaced with library
   const strategyCalculation = {
     netPremium: 0,
@@ -141,7 +240,7 @@ function OptionsPage() {
       );
       
       const leg_option_strike_prices = legs.map(leg => 
-        parseFloat(leg.strikePrice)
+        parseFloat(parseCurrency(leg.strikePrice))
       );
       
       const leg_option_expirations = legs.map(leg => {
@@ -160,11 +259,8 @@ function OptionsPage() {
         leg_option_expirations
       );
 
-      console.log('Position transaction:', transaction);
-      
       // Submit transaction to blockchain
       const response = await signAndSubmitTransaction(transaction);
-      console.log('Transaction response:', response);
       
       alert(`Position created successfully! Transaction hash: ${response.hash}`);
       
@@ -174,17 +270,17 @@ function OptionsPage() {
     }
   };
 
-  const currentAsset = assets.find(asset => asset.symbol === selectedAsset);
+
 
   return (
     <main className="internal-page-content">
       <div className="options-page-container">
         {/* Header */}
         <div className="page-header-section">
-          <h1 className="page-header">Options Trading [Contracts Complete, UI In Progress...]</h1>
+          <h1 className="page-header">Options Trading</h1>
           <p className="hero-subtitle wide">
-            Create and trade multi-leg options strategies. Build spreads, straddles, and custom combinations up to 3 legs. 
-            Options are priced using a on-chain Binomial Option Pricing Model the uses Pyth oracles for underlying asset price data and
+            Create and trade multi-leg option positions. Build spreads, straddles, and custom combinations. 
+            Options are priced using an on-chain Binomial Option Pricing Model that uses Pyth oracles for underlying asset price data and
             risk-free rates.
           </p>
         </div>
@@ -196,11 +292,9 @@ function OptionsPage() {
               <h3>Position Builder</h3>
               <div className="leg-controls">
                 <span className="leg-count">{legs.length} leg{legs.length > 1 ? 's' : ''}</span>
-                {legs.length < 3 && (
                   <button className="add-leg-btn" onClick={addLeg}>
                     + Add Leg
                   </button>
-                )}
               </div>
             </div>
 
@@ -221,11 +315,13 @@ function OptionsPage() {
                     ))}
                   </select>
                   <div className="asset-price-display">
-                    <span className="current-price">${currentAsset?.price.toLocaleString()}</span>
-                    <span className={`price-change ${currentAsset?.change.startsWith('+') ? 'positive' : 'negative'}`}>
-                      {currentAsset?.change} 24h
-                    </span>
-                  </div>
+                  <span className="current-price">
+                    {assetPrices[selectedAsset] ? 
+                    `$${assetPrices[selectedAsset].toLocaleString()}` : 
+                      'Loading...'
+                      }
+                     </span>
+                   </div>
                 </div>
               </div>
             </div>
@@ -306,19 +402,59 @@ function OptionsPage() {
 
                   {/* Strike Price and Expiration */}
                   <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Strike Price</label>
-                      <div className="input-group">
-                        <span className="input-prefix">$</span>
-                        <input
-                          type="text"
-                          className="form-input"
-                          placeholder="70,000"
-                          value={leg.strikePrice}
-                          onChange={(e) => updateLeg(leg.id, 'strikePrice', e.target.value)}
-                        />
-                      </div>
-                    </div>
+                  <div className="form-section">
+                  <label className="form-label">Strike Price</label>
+                  <div className={`input-group ${!leg.isValidStrike ? 'invalid' : ''}`}>
+                  <span className="input-prefix">$</span>
+                  <input
+                  type="text"
+                  className="form-input"
+                  placeholder="70,000"
+                  value={leg.strikePrice}
+                  onChange={(e) => handleStrikePriceChange(leg.id, e)}
+                  />
+                  </div>
+                  <div className="quick-strike-options">
+                  <button 
+                      type="button"
+                        className="quick-strike-btn"
+                           onClick={() => handleQuickStrike(leg.id, leg.optionType === 'call' ? -10 : 10)}
+                         >
+                           10% ITM
+                         </button>
+                         <button 
+                           type="button"
+                           className="quick-strike-btn"
+                           onClick={() => handleQuickStrike(leg.id, leg.optionType === 'call' ? -5 : 5)}
+                         >
+                           5% ITM
+                         </button>
+                         <button 
+                           type="button"
+                           className="quick-strike-btn"
+                           onClick={() => handleQuickStrike(leg.id, 0)}
+                         >
+                           ATM
+                         </button>
+                         <button 
+                           type="button"
+                           className="quick-strike-btn"
+                           onClick={() => handleQuickStrike(leg.id, leg.optionType === 'call' ? 5 : -5)}
+                         >
+                           5% OTM
+                         </button>
+                         <button 
+                           type="button"
+                           className="quick-strike-btn"
+                           onClick={() => handleQuickStrike(leg.id, leg.optionType === 'call' ? 10 : -10)}
+                         >
+                           10% OTM
+                         </button>
+                       </div>
+                       {!leg.isValidStrike && (
+                         <div className="input-error">Please enter a valid strike price</div>
+                       )}
+                     </div>
 
                     <div className="form-section">
                       <label className="form-label">Expiration</label>
@@ -370,7 +506,7 @@ function OptionsPage() {
             {/* Create Button */}
             <button 
               className="create-option-btn"
-              disabled={!connected || legs.some(leg => !leg.strikePrice || !leg.amount || !leg.isValidAmount)}
+              disabled={!connected || legs.some(leg => !leg.strikePrice || !leg.amount || !leg.isValidAmount || !leg.isValidStrike)}
               onClick={handleCreatePosition}
             >
               {!connected ? 'Connect Wallet' : 'Create Position'}

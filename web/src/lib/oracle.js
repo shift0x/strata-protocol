@@ -10,10 +10,5 @@ export const getAssetPrice = async(symbol) => {
 
     const result = await aptos.view({ payload: request });
 
-    console.log({
-        symbol,
-        result
-    })
-
     return result;
 }

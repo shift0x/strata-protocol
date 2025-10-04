@@ -35,7 +35,7 @@ function Home() {
         <div className="stats-panel">
           <div className="stats-top">
             <div className="stats-badge">LIVE</div>
-            <div className="stats-number">4</div>
+            <div className="stats-number">3</div>
             <div className="stats-label">active markets</div>
           </div>
           <div className="stats-indicator">
@@ -69,7 +69,7 @@ function Home() {
           <div className="featured-badge">BUILDER</div>
           <h2 className="featured-title">Multi-Leg Strategy Builder</h2>
           <p className="featured-description">
-            Create complex options strategies with up to 3 legs. Build spreads, straddles, and custom combinations across BTC, ETH, and APT with real-time pricing and risk calculations.
+            Create complex multi-leg option positions. Build spreads, straddles, and custom combinations across supported markets with on-chain pricing and risk calculations.
           </p>
         </div>
         

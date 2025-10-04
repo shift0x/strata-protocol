@@ -1,6 +1,7 @@
 import aptos from "./chain"
 import { addresses } from "./addresses"
 import { getAddressTokenBalance } from "./assets"
+import { parseDecimals } from "./utils"
 
 const marketSymbolMap = {
     'APT-USD': 'BINANCE:APTUSDT',
@@ -160,9 +161,4 @@ export const mintTestUSDCTransaction = async (userAddress) => {
     return transaction;
 }
 
-const parseDecimals = (amount, decimals) => {
-    const floatValue = parseFloat(amount);
-    const formattedValue = floatValue / Math.pow(10, decimals);
 
-    return formattedValue;
-}
