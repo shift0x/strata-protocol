@@ -336,7 +336,7 @@ module options_exchange {
         // ensure the position exists
         assert!(position_id <= exchange.position_counter, E_POSITION_NOT_FOUND);
 
-        let position = exchange.user_positions[position_id-1];
+        let position = vector::borrow(&mut exchange.user_positions, position_id-1);
 
         // ensure the position is open
         assert!(position.status == OrderStatus::OPEN, E_POSITION_NOT_OPEN);
@@ -345,7 +345,7 @@ module options_exchange {
         assert!(position.trader_address == user_addr, E_UNAUTHORIZED);
 
         // close the position
-        execute_close_position(user, exchange, &mut position, marketplace_address, exchange_address);
+        execute_close_position(user, exchange, marketplace_address, exchange_address, position_id-1);
     }
 
     public fun create_exchange(
@@ -425,11 +425,12 @@ module options_exchange {
 
     fun execute_close_position(
         trader: &signer,
-        exchange: &OptionsExchange,
-        position: &mut Position,
+        exchange: &mut OptionsExchange,
         marketplace_address: address,
-        exchange_address: address
+        exchange_address: address,
+        position_id: u64
     ) {
+        let position = vector::borrow_mut(&mut exchange.user_positions, position_id);
         let trader_address = signer::address_of(trader);
         
         // quote the position to determine net debit and margin amounts
@@ -466,9 +467,9 @@ module options_exchange {
         let margin_account_signer = isolated_margin_account::get_signer(user_margin_account);
         let usdc_metadata = object::address_to_object<Metadata>(exchange.usdc_address);
         let staking_vault_address = volatility_marketplace::get_staking_vault_address(marketplace_address); 
-
+        
         if(profit > 0){ // transfer the profit amount from the vault to the margin account
-            let profit_64 = (profit / ONE_E12) as u64;
+            let profit_64 = ((profit / ONE_E12) as u64) + 1; // we need to round up
 
             staking_vault::withdraw_from_vault(
                 staking_vault_address, 
@@ -498,6 +499,7 @@ module options_exchange {
 
         if(transfer_amount_to_trader > 0){
             let transfer_amount_trader_64 = (transfer_amount_to_trader / ONE_E12) as u64;
+
             let usdc_tokens = primary_fungible_store::withdraw(
                 &margin_account_signer, 
                 usdc_metadata, 

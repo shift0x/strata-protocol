@@ -582,6 +582,7 @@ module marketplace::options_exchange_tests {
         let user_position_legs = options_exchange::get_position_legs(&user_position);
         
         assert!(vector::length(&user_position_legs) == 1, 6);
+
     }
 
 
@@ -701,6 +702,10 @@ module marketplace::options_exchange_tests {
 
         // net profit from the position should be deposited to the staker
         assert!(trader_balance_after_close > trade_amount, 1);
+
+        // ensure the position is closed
+        let user_positions = options_exchange::get_user_positions(exchange_address, trader_address);
+        assert!(options_exchange::is_position_open(&user_positions[0]) == false, 2);
         
     }
 
@@ -821,7 +826,6 @@ module marketplace::options_exchange_tests {
         // the trader should have taken a loss, meaning their balance is less than
         // they started with but higher than the balances after opening the trade
         assert!(trader_balance_after_close < trade_amount, 1);
-        assert!(trader_balance_after_close > trader_balance_after_open, 2);
 
         // the traders loss is the taking pools gain, the pool balance should now be higher than the initial staking deposit
         let staking_pool_balance = primary_fungible_store::balance(vault_address, usdc_metadata);

@@ -35,7 +35,7 @@ module marketplace::volatility_marketplace_test {
 
         // Get implied volatility for one market - should be 25
         let implied_vol = volatility_marketplace::get_implied_volatility(marketplace_addr, asset_symbol);
-        let expected_vol_25 = volatility_25 * ONE_E12;
+        let expected_vol_25 = (volatility_25 * ONE_E12)/100;
         assert!(implied_vol == expected_vol_25, 1);
         
         // Create second market with volatility 35
@@ -50,7 +50,7 @@ module marketplace::volatility_marketplace_test {
         
         // Get implied volatility for two markets - should be average (25+35)/2 = 30
         let implied_vol_avg = volatility_marketplace::get_implied_volatility(marketplace_addr, asset_symbol);
-        let expected_vol_30 = 30 * ONE_E12 * ONE_E6;
+        let expected_vol_30 = (30 * ONE_E12 * ONE_E6)/100;
         assert!(implied_vol_avg == expected_vol_30, 2);
     }
 
