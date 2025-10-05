@@ -570,13 +570,21 @@ function OptionsPage() {
                             <h5>Closing Quote</h5>
                             <div className="quote-details">
                               <div className="quote-row">
-                                <span>Net Credit:</span>
-                                <span>${position.closingQuote.netCredit.toLocaleString()}</span>
-                              </div>
-                              <div className="quote-row">
-                                <span>Date:</span>
-                                <span>{position.closingQuote.timestamp.toLocaleDateString()}</span>
-                              </div>
+                              <span>Net Debit:</span>
+                              <span>${position.closingQuote.netDebit.toLocaleString()}</span>
+                            </div>
+                            <div className="quote-row">
+                              <span>Underlying Price:</span>
+                              <span>${position.closingQuote.underlyingPrice.toLocaleString()}</span>
+                            </div>
+                            <div className="quote-row">
+                              <span>Volatility:</span>
+                              <span>{(position.closingQuote.volatility * 100).toFixed(1)}%</span>
+                            </div>
+                            <div className="quote-row">
+                              <span>Date:</span>
+                              <span>{position.closingQuote.timestamp.toLocaleDateString()}</span>
+                            </div>
                             </div>
                           </div>
                         )}
