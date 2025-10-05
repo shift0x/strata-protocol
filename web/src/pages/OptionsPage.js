@@ -278,7 +278,7 @@ function OptionsPage() {
       <div className="options-page-container">
         {/* Header */}
         <div className="page-header-section">
-          <h1 className="page-header">Options Trading</h1>
+          <h1 className="page-header">Options Trading [Contracts completed, wire up in progress]</h1>
           <p className="hero-subtitle wide">
             Create and trade multi-leg option positions. Build spreads, straddles, and custom combinations. 
             Options are priced using an on-chain Binomial Option Pricing Model that uses Pyth oracles for underlying asset price data and

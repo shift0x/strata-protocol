@@ -1,9 +1,12 @@
 import { parseDecimals } from "./utils";
+import { Buffer } from "buffer";
 
 var priceFeeds = [];
+const baseUrl = "https://hermes-beta.pyth.network"
+
 
 const initPriceFeeds = async() => {
-    const url = 'https://hermes.pyth.network/v2/price_feeds';
+    const url = `${baseUrl}/v2/price_feeds`;
     
     try {
         const response = await fetch(url);
@@ -33,7 +36,7 @@ const getPriceData = async(symbol) => {
     if(!feed)
         throw `feed item not found for symbol ${symbol}`
 
-    const url = `https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feed.id}&parsed=true`
+    const url = `${baseUrl}/v2/updates/price/latest?ids[]=${feed.id}&parsed=true`
 
     try {
         const response = await fetch(url);
@@ -49,8 +52,8 @@ const getPriceData = async(symbol) => {
 
 export const getPriceUpdate = async(symbol) => {
     const data = await getPriceData(symbol);
-    
-    return data.binary.data;
+
+    return data.binary.data
 }
 
 export const getAssetPrice = async(symbol) => {

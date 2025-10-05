@@ -15,6 +15,11 @@ export const openOptionPosition = async (
     const underlyingPriceUpdate = await getPriceUpdate(asset_symbol);
     const riskFreeRatePriceUpdate = await getPriceUpdate("Rates.US10Y");
 
+    console.log({
+        underlyingPriceUpdate,
+        riskFreeRatePriceUpdate
+    })
+
     const leg_option_amounts_big = leg_option_amounts.map(amount => {
         // amounts are 18 decimals
         return formatDecimals(amount, 18);
