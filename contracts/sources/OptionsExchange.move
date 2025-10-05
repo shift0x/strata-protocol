@@ -179,24 +179,14 @@ module options_exchange {
         oracle_address: address,
     }
 
-    // entry functions
-    public entry fun open_position(
-        user: &signer,
-        marketplace_address: address,
-        exchange_address: address,
+    fun reconstruct_position(
         asset_symbol: String,
         leg_option_types: vector<u8>,
         leg_option_sides: vector<u8>,
         leg_option_amounts: vector<u256>,
         leg_option_strike_prices: vector<u256>,
         leg_option_expirations: vector<u64>
-    ) acquires OptionsExchange {
-        let exchange = borrow_global_mut<OptionsExchange>(exchange_address);
-        let user_addr = signer::address_of(user);
-
-        // ensure the user exists
-        ensure_user_created(user_addr, exchange, exchange_address);
-
+    ) : Position {
         // construct position legs from component vectors
         let legs = vector::empty<PositionLeg>();
         let num_legs = vector::length(&leg_option_types);
@@ -226,11 +216,37 @@ module options_exchange {
         };
 
         // create the user position
-        let position = create_position(
-            exchange.position_counter + 1,
+        create_position(0, asset_symbol, legs)
+    }
+
+    // entry functions
+    public entry fun open_position(
+        user: &signer,
+        marketplace_address: address,
+        exchange_address: address,
+        asset_symbol: String,
+        leg_option_types: vector<u8>,
+        leg_option_sides: vector<u8>,
+        leg_option_amounts: vector<u256>,
+        leg_option_strike_prices: vector<u256>,
+        leg_option_expirations: vector<u64>
+    ) acquires OptionsExchange {
+        let exchange = borrow_global_mut<OptionsExchange>(exchange_address);
+        let user_addr = signer::address_of(user);
+
+        // ensure the user exists
+        ensure_user_created(user_addr, exchange, exchange_address);
+
+        let position = reconstruct_position(
             asset_symbol,
-            legs
+            leg_option_types,
+            leg_option_sides,
+            leg_option_amounts,
+            leg_option_strike_prices,
+            leg_option_expirations
         );
+
+        position.id = exchange.position_counter + 1;
         position.trader_address = user_addr;
 
         let user_positions_ref = table::borrow_mut<address, vector<u64>>(&mut exchange.user_position_lookup, user_addr);
@@ -284,7 +300,6 @@ module options_exchange {
         execute_close_position(user, exchange, &mut position, marketplace_address, exchange_address);
     }
 
-
     public fun create_exchange(
         owner: &signer,
         usdc_address: address
@@ -321,11 +336,6 @@ module options_exchange {
         (object_addr, oracle_address)
     }
 
-   
-
-
-   
-
     fun get_quote_for_position(
         position: &Position,
         marketplace_address: address,
@@ -343,8 +353,21 @@ module options_exchange {
         // get the risk free rate from the oracle
         let risk_free_rate_bps = price_oracle::get_price(oracle_address, string::utf8(b"Rates.US10Y"));
 
+        let (
+            asset_symbol, 
+            leg_option_types, 
+            leg_option_sides, 
+            leg_option_amounts, 
+            leg_option_strike_prices, 
+            leg_option_expirations) = deconstruct_position(*position);
+
         price_position(
-            position, 
+            asset_symbol,
+            leg_option_types,
+            leg_option_sides,
+            leg_option_amounts,
+            leg_option_strike_prices,
+            leg_option_expirations,
             underlying_price, 
             risk_free_rate_bps, 
             volatility_bps, 
@@ -624,13 +647,28 @@ module options_exchange {
     // - risk_free_rate_bps: annualized rate in basis points (e.g., 500 = 5.00%)
     // - volatility_bps: annualized implied vol in basis points (e.g., 2000 = 20.00%)
     // - current_time_secs: UNIX timestamp (seconds)
+    #[view]
     public fun price_position(
-        position: &Position,
+        asset_symbol: String,
+        leg_option_types: vector<u8>,
+        leg_option_sides: vector<u8>,
+        leg_option_amounts: vector<u256>,
+        leg_option_strike_prices: vector<u256>,
+        leg_option_expirations: vector<u64>,
         underlying_price: u256,
         risk_free_rate_bps: u256,
         volatility_bps: u256,
         current_time_secs: u64
     ): Quote {
+        let position = reconstruct_position(
+            asset_symbol,
+            leg_option_types,
+            leg_option_sides,
+            leg_option_amounts,
+            leg_option_strike_prices,
+            leg_option_expirations
+        );
+
         let legs_ref = &position.legs;
         let n = vector::length<PositionLeg>(legs_ref);
         assert!(n > 0, E_POSITION_EMPTY);

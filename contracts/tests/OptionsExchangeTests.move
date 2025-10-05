@@ -48,9 +48,22 @@ module marketplace::options_exchange_tests {
             string::utf8(b"BTC"),
             legs
         );
+
+        let (
+            asset_symbol, 
+            leg_option_types, 
+            leg_option_sides, 
+            leg_option_amounts, 
+            leg_option_strike_prices, 
+            leg_option_expirations) = options_exchange::deconstruct_position(position);
         
         let quote = options_exchange::price_position(
-            &position,
+            asset_symbol,
+            leg_option_types,
+            leg_option_sides,
+            leg_option_amounts,
+            leg_option_strike_prices,
+            leg_option_expirations,
             100 * ONE_E18,            // $100 underlying price (scaled)
             (5 * ONE_E18) / 100,      // 5% risk-free rate
             (20 * ONE_E18) / 100,     // 20% volatility (2000 bps)
@@ -87,9 +100,22 @@ module marketplace::options_exchange_tests {
             string::utf8(b"BTC"),
             legs
         );
+
+        let (
+            asset_symbol, 
+            leg_option_types, 
+            leg_option_sides, 
+            leg_option_amounts, 
+            leg_option_strike_prices, 
+            leg_option_expirations) = options_exchange::deconstruct_position(position);
         
         let quote = options_exchange::price_position(
-            &position,
+            asset_symbol,
+            leg_option_types,
+            leg_option_sides,
+            leg_option_amounts,
+            leg_option_strike_prices,
+            leg_option_expirations,
             100 * ONE_E18,            // $100 underlying price (scaled)
             (5 * ONE_E18) / 100,      // 5% risk-free rate
             (20 * ONE_E18) / 100,     // 20% volatility (2000 bps)
@@ -134,9 +160,22 @@ module marketplace::options_exchange_tests {
             string::utf8(b"BTC"),
             legs
         );
+
+        let (
+            asset_symbol, 
+            leg_option_types, 
+            leg_option_sides, 
+            leg_option_amounts, 
+            leg_option_strike_prices, 
+            leg_option_expirations) = options_exchange::deconstruct_position(position);
         
         let quote = options_exchange::price_position(
-            &position,
+            asset_symbol,
+            leg_option_types,
+            leg_option_sides,
+            leg_option_amounts,
+            leg_option_strike_prices,
+            leg_option_expirations,
             100 * ONE_E18,            // $100 underlying price (scaled)
             (5 * ONE_E18) / 100,      // 5% risk-free rate
             (20 * ONE_E18) / 100,     // 20% volatility (2000 bps)
@@ -171,9 +210,22 @@ module marketplace::options_exchange_tests {
             string::utf8(b"BTC"),
             legs
         );
+
+        let (
+            asset_symbol, 
+            leg_option_types, 
+            leg_option_sides, 
+            leg_option_amounts, 
+            leg_option_strike_prices, 
+            leg_option_expirations) = options_exchange::deconstruct_position(position);
         
         let quote = options_exchange::price_position(
-            &position,
+            asset_symbol,
+            leg_option_types,
+            leg_option_sides,
+            leg_option_amounts,
+            leg_option_strike_prices,
+            leg_option_expirations,
             100 * ONE_E18,            // $100 underlying price (scaled)
             (5 * ONE_E18) / 100,      // 5% risk-free rate
             (20 * ONE_E18) / 100,     // 20% volatility (2000 bps)
@@ -221,8 +273,21 @@ module marketplace::options_exchange_tests {
             legs
         );
         
+        let (
+            asset_symbol, 
+            leg_option_types, 
+            leg_option_sides, 
+            leg_option_amounts, 
+            leg_option_strike_prices, 
+            leg_option_expirations) = options_exchange::deconstruct_position(position);
+
         let quote = options_exchange::price_position(
-            &position,
+            asset_symbol,
+            leg_option_types,
+            leg_option_sides,
+            leg_option_amounts,
+            leg_option_strike_prices,
+            leg_option_expirations,
             100 * ONE_E18,            // $100 underlying price (scaled)
             (5 * ONE_E18) / 100,      // 5% risk-free rate
             (20 * ONE_E18) / 100,     // 20% volatility (2000 bps)
@@ -270,9 +335,22 @@ module marketplace::options_exchange_tests {
             string::utf8(b"BTC"),
             legs
         );
+
+        let (
+            asset_symbol, 
+            leg_option_types, 
+            leg_option_sides, 
+            leg_option_amounts, 
+            leg_option_strike_prices, 
+            leg_option_expirations) = options_exchange::deconstruct_position(position);
         
         let quote = options_exchange::price_position(
-            &position,
+            asset_symbol,
+            leg_option_types,
+            leg_option_sides,
+            leg_option_amounts,
+            leg_option_strike_prices,
+            leg_option_expirations,
             100 * ONE_E18,            // $100 underlying price (scaled)
             (5 * ONE_E18) / 100,      // 5% risk-free rate
             (20 * ONE_E18) / 100,     // 20% volatility (2000 bps)
@@ -318,9 +396,22 @@ module marketplace::options_exchange_tests {
             string::utf8(b"BTC"),
             legs
         );
+
+        let (
+            asset_symbol, 
+            leg_option_types, 
+            leg_option_sides, 
+            leg_option_amounts, 
+            leg_option_strike_prices, 
+            leg_option_expirations) = options_exchange::deconstruct_position(position);
         
         let quote = options_exchange::price_position(
-            &position,
+            asset_symbol,
+            leg_option_types,
+            leg_option_sides,
+            leg_option_amounts,
+            leg_option_strike_prices,
+            leg_option_expirations,
             100 * ONE_E18,            // $100 underlying price (scaled)
             (5 * ONE_E18) / 100,      // 5% risk-free rate
             (20 * ONE_E18) / 100,     // 20% volatility (2000 bps)
