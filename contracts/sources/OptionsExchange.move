@@ -11,7 +11,7 @@ module options_exchange {
     use aptos_framework::primary_fungible_store::{Self};
     use aptos_framework::fungible_asset::{Self, Metadata};
     use aptos_framework::event;
-    use marketplace::binomial_option_pricing;
+    use marketplace::binomial_option_pricing::{Self, Greeks};
     use marketplace::isolated_margin_account;
     use marketplace::price_oracle;
     use marketplace::volatility_marketplace;

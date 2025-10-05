@@ -13,13 +13,13 @@ module binomial_option_pricing {
     const EPS_RATE_ABS: u256  = 100000000000000;   // 0.0001 = 1 bp absolute rate bump
 
     // Signed fixed-point number: value = (neg ? -mag : mag) with 1e18 scaling
-    struct Signed has copy, drop { 
+    struct Signed has copy, drop, store { 
         neg: bool, 
         mag: u256 
     }
 
     // Group of Greeks
-    struct Greeks has drop {
+    struct Greeks has drop, copy, store {
         delta: Signed,
         gamma: Signed,
         vega: Signed,
@@ -409,10 +409,22 @@ module binomial_option_pricing {
         g.rho
     }
 
+    public fun new_option_greeks() : Greeks {
+        Greeks {
+            delta: Signed { neg: false, mag: 0 },
+            gamma: Signed { neg: false, mag: 0 },
+            vega: Signed { neg: false, mag: 0 },
+            theta: Signed { neg: false, mag: 0 },
+            rho: Signed { neg: false, mag: 0 }
+        }
+    }
+
     public fun get_signed_values(
         value: &Signed
     ) : (bool, u256) {
         (value.neg, value.mag)
     }
+
+
 }
 }
