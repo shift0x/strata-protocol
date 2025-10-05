@@ -28,6 +28,8 @@ module options_exchange {
     const E_UNAUTHORIZED: u64 = 5;
     const E_POSITION_NOT_OPEN: u64 = 6;
 
+    const ONE_E_18: u256 = 1000000000000000000u256;
+
     // ------------------------------------------------------------------------
     // Events
     // ------------------------------------------------------------------------
@@ -79,7 +81,7 @@ module options_exchange {
     const ONE_BP_IN_FP: u256 = 100000000000000u256; // 1e14
 
     // Time constants
-    const SECONDS_PER_DAY: u64 = 86400;
+    const SECONDS_PER_DAY: u256 = 86400;
 
     // Maintenance margin percent in bps (e.g., 7500 = 75%)
     const MAINTENANCE_MARGIN_BPS: u64 = 7500;
@@ -642,6 +644,19 @@ module options_exchange {
     // Quoting (premium) and margin
     // ------------------------------------------------------------------------
 
+    public fun get_days_to_expiration(
+        expiration: u64
+    ) : u256 {
+        let current_time_secs = timestamp::now_seconds();
+
+        if (expiration > current_time_secs) {
+            let time_diff = (expiration - current_time_secs) as u256;
+
+            (time_diff * ONE_E_18) / SECONDS_PER_DAY
+        } else {
+            0
+        }
+    }
     // Inputs:
     // - underlying_price: in asset's base units (same units as strike and multiplier effects)
     // - risk_free_rate_bps: annualized rate in basis points (e.g., 500 = 5.00%)
@@ -680,12 +695,7 @@ module options_exchange {
         let i = 0;
         while (i < n) {
             let leg_ref = vector::borrow<PositionLeg>(legs_ref, i);
-
-            let days_to_exp = if (leg_ref.expiration > current_time_secs) {
-                (leg_ref.expiration - current_time_secs) / SECONDS_PER_DAY
-            } else {
-                0
-            };
+            let days_to_exp = get_days_to_expiration(leg_ref.expiration);
 
             let is_call = if (leg_ref.option_type == OptionType::CALL) {
                 true

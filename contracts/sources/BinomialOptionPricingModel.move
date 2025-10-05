@@ -83,12 +83,12 @@ module binomial_option_pricing {
         strike_price: u256,
         risk_free_rate: u256,
         volatility: u256,
-        days_to_expiration: u64,
+        time_to_expiration_days: u256,
         num_steps: u64,
         is_call: bool
     ): u256 {
         // T = 0 => intrinsic value
-        if (days_to_expiration == 0) {
+        if (time_to_expiration_days == 0) {
             return if (is_call) {
                 max_u256(
                     if (underlying_price > strike_price) underlying_price - strike_price else 0,
@@ -102,11 +102,9 @@ module binomial_option_pricing {
             }
         };
 
-        let time_to_expiration_days = days_to_expiration as u256;
-
         // dt (in years) per step, scaled by PRECISION
         let denom = (DAYS_PER_YEAR * (num_steps as u256));
-        let dt_years_scaled = (time_to_expiration_days * PRECISION) / denom;
+        let dt_years_scaled = time_to_expiration_days / denom;
 
         // sqrt(dt) with correct scaling:
         let sqrt_dt = sqrt(dt_years_scaled * PRECISION);
@@ -206,10 +204,10 @@ module binomial_option_pricing {
         strike_price: u256,       // scaled by 1e18
         risk_free_rate: u256,     // annual r, scaled by 1e18
         volatility: u256,         // annual σ, scaled by 1e18
-        days_to_expiration: u64,
+        days_to_expiration: u256, // days to expiration as u256
         is_call: bool
     ): u256 {
-        let steps = choose_num_steps(days_to_expiration);
+        let steps = choose_num_steps((days_to_expiration / PRECISION) as u64);
         price_core(
             underlying_price,
             strike_price,
@@ -270,10 +268,10 @@ module binomial_option_pricing {
         strike_price: u256,
         risk_free_rate: u256,
         volatility: u256,
-        days_to_expiration: u64,
+        days_to_expiration: u256,
         is_call: bool
     ): Greeks {
-        let steps = choose_num_steps(days_to_expiration);
+        let steps = choose_num_steps((days_to_expiration/PRECISION) as u64);
 
         // Base price
         let p0 = price_core(
@@ -350,7 +348,7 @@ module binomial_option_pricing {
         strike_price: u256, 
         risk_free_rate: u256,
         volatility: u256, 
-        days_to_expiration: u64, 
+        days_to_expiration: u256, 
         is_call: bool
     ): Signed {
         let g = get_greeks(underlying_price, strike_price, risk_free_rate, volatility, days_to_expiration, is_call);
@@ -363,7 +361,7 @@ module binomial_option_pricing {
         strike_price: u256, 
         risk_free_rate: u256,
         volatility: u256, 
-        days_to_expiration: u64, 
+        days_to_expiration: u256, 
         is_call: bool
     ): Signed {
         let g = get_greeks(underlying_price, strike_price, risk_free_rate, volatility, days_to_expiration, is_call);
@@ -376,7 +374,7 @@ module binomial_option_pricing {
         strike_price: u256, 
         risk_free_rate: u256,
         volatility: u256, 
-        days_to_expiration: u64, 
+        days_to_expiration: u256, 
         is_call: bool
     ): Signed {
         let g = get_greeks(underlying_price, strike_price, risk_free_rate, volatility, days_to_expiration, is_call);
@@ -389,7 +387,7 @@ module binomial_option_pricing {
         strike_price: u256, 
         risk_free_rate: u256,
         volatility: u256, 
-        days_to_expiration: u64, 
+        days_to_expiration: u256, 
         is_call: bool
     ): Signed {
         let g = get_greeks(underlying_price, strike_price, risk_free_rate, volatility, days_to_expiration, is_call);
@@ -402,7 +400,7 @@ module binomial_option_pricing {
         strike_price: u256, 
         risk_free_rate: u256,
         volatility: u256,
-        days_to_expiration: u64, 
+        days_to_expiration: u256, 
         is_call: bool
     ): Signed {
         let g = get_greeks(underlying_price, strike_price, risk_free_rate, volatility, days_to_expiration, is_call);

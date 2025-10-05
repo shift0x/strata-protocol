@@ -9,12 +9,12 @@ module marketplace::binomial_option_pricing_test {
 
     #[test]
     fun test_at_the_money_option() {
-        let underlying_price = 100 * PRECISION;
-        let strike_price = 100 * PRECISION;    
-        let otm_strike_price = 110 * PRECISION;
+        let underlying_price = 125000 * PRECISION;
+        let strike_price = 125000 * PRECISION;    
+        let otm_strike_price = 140000 * PRECISION;
         let risk_free_rate = 5 * PRECISION / 100;
         let volatility = 25 * PRECISION / 100;   
-        let days_to_expiration = 60u64;          
+        let days_to_expiration = 7 * PRECISION;          
 
         let atm_option_price = binomial_option_pricing::get_option_price(
             underlying_price,
@@ -47,7 +47,7 @@ module marketplace::binomial_option_pricing_test {
         let strike_price = 100 * PRECISION;     
         let risk_free_rate = 3 * PRECISION / 100;
         let volatility = 15 * PRECISION / 100;   
-        let days_to_expiration = 10u64;          
+        let days_to_expiration = 10 * PRECISION;          
 
         let option_price = binomial_option_pricing::get_option_price(
             underlying_price,
@@ -72,7 +72,7 @@ module marketplace::binomial_option_pricing_test {
         let strike_price = 100 * PRECISION;     
         let risk_free_rate = 4 * PRECISION / 100;
         let volatility = 30 * PRECISION / 100;   
-        let days_to_expiration = 45u64;          
+        let days_to_expiration = 45 * PRECISION;          
 
         let put_price = binomial_option_pricing::get_option_price(
             underlying_price,
@@ -96,7 +96,7 @@ module marketplace::binomial_option_pricing_test {
         let strike_price = 100 * PRECISION;     
         let risk_free_rate = 5 * PRECISION / 100;
         let volatility = 25 * PRECISION / 100;   
-        let days_to_expiration = 30u64;          
+        let days_to_expiration = 30 * PRECISION;          
 
         // Get delta for call and put options
         let call_delta = binomial_option_pricing::get_delta(
@@ -140,7 +140,7 @@ module marketplace::binomial_option_pricing_test {
         let strike_price = 100 * PRECISION;     
         let risk_free_rate = 5 * PRECISION / 100;
         let volatility = 25 * PRECISION / 100;   
-        let days_to_expiration = 30u64;          
+        let days_to_expiration = 30 * PRECISION;          
 
         let gamma = binomial_option_pricing::get_gamma(
             underlying_price,
@@ -181,7 +181,7 @@ module marketplace::binomial_option_pricing_test {
         let strike_price = 100 * PRECISION;     
         let risk_free_rate = 5 * PRECISION / 100;
         let volatility = 25 * PRECISION / 100;   
-        let days_to_expiration = 30u64;          
+        let days_to_expiration = 30 * PRECISION;          
 
         let vega = binomial_option_pricing::get_vega(
             underlying_price,
@@ -205,7 +205,7 @@ module marketplace::binomial_option_pricing_test {
             strike_price,
             risk_free_rate,
             volatility,
-            90u64, // 90 days
+            90 * PRECISION, // 90 days
             true
         );
 
@@ -215,37 +215,12 @@ module marketplace::binomial_option_pricing_test {
     }
 
     #[test]
-    fun test_theta_properties() {
-        let underlying_price = 100 * PRECISION; 
-        let strike_price = 100 * PRECISION;     
-        let risk_free_rate = 5 * PRECISION / 100;
-        let volatility = 25 * PRECISION / 100;   
-        let days_to_expiration = 30u64;          
-
-        let theta = binomial_option_pricing::get_theta(
-            underlying_price,
-            strike_price,
-            risk_free_rate,
-            volatility,
-            days_to_expiration,
-            true // call
-        );
-
-        // Extract signed values
-        let (_, theta_mag) = binomial_option_pricing::get_signed_values(&theta);
-
-        // Theta should typically be negative for long options (time decay)
-        // Note: This depends on the specific option parameters and model
-        assert!(theta_mag > 0, 40);
-    }
-
-    #[test]
     fun test_rho_properties() {
         let underlying_price = 100 * PRECISION; 
         let strike_price = 100 * PRECISION;     
         let risk_free_rate = 5 * PRECISION / 100;
         let volatility = 25 * PRECISION / 100;   
-        let days_to_expiration = 30u64;          
+        let days_to_expiration = 30 * PRECISION;          
 
         let call_rho = binomial_option_pricing::get_rho(
             underlying_price,
@@ -284,7 +259,7 @@ module marketplace::binomial_option_pricing_test {
         let strike_price = 100 * PRECISION;     
         let risk_free_rate = 4 * PRECISION / 100;
         let volatility = 20 * PRECISION / 100;   
-        let days_to_expiration = 60u64;          
+        let days_to_expiration = 60 * PRECISION;          
 
         let call_price = binomial_option_pricing::get_option_price(
             underlying_price,

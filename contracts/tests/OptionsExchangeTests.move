@@ -26,8 +26,11 @@ module marketplace::options_exchange_tests {
     const E_MARGIN_TOO_LOW: u64 = 101;
     const E_PREMIUM_ZERO: u64 = 102;
     
-    #[test]
-    fun test_single_long_call_pricing() {
+    #[test(framework = @aptos_framework)]
+    fun test_single_long_call_pricing(framework: signer) {
+        // Setup test environment
+        timestamp::set_time_has_started_for_testing(&framework);
+
         // Test basic long call position pricing
         let current_time = 1000000u64;
         let expiration = current_time + THIRTY_DAYS_SECONDS;
@@ -70,6 +73,8 @@ module marketplace::options_exchange_tests {
             current_time
         );
         
+        let debit_amount = options_exchange::get_net_debit(&quote);
+
         // Long call should have net_debit > 0 and net_credit = 0
         assert!(options_exchange::get_net_debit(&quote) > 0, E_PREMIUM_ZERO);
         assert!(options_exchange::get_net_credit(&quote) == 0, E_QUOTE_MISMATCH);
@@ -78,9 +83,12 @@ module marketplace::options_exchange_tests {
         assert!(options_exchange::get_maintenance_margin(&quote) == 0, E_MARGIN_TOO_LOW);
     }
     
-    #[test]
-    fun test_single_short_call_pricing() {
-        // Test basic short call position pricing
+    #[test(framework = @aptos_framework)]
+    fun test_basic_short_call_pricing(framework: signer) {
+        // Setup test environment
+        timestamp::set_time_has_started_for_testing(&framework);
+
+        // Test basic short put position pricing
         let current_time = 1000000u64;
         let expiration = current_time + THIRTY_DAYS_SECONDS;
         
@@ -138,8 +146,11 @@ module marketplace::options_exchange_tests {
 
     }
     
-    #[test]
-    fun test_single_long_put_pricing() {
+    #[test(framework = @aptos_framework)]
+    fun test_single_long_put_pricing(framework: signer) {
+        // Setup test environment
+        timestamp::set_time_has_started_for_testing(&framework);
+
         // Test basic long put position pricing
         let current_time = 1000000u64;
         let expiration = current_time + THIRTY_DAYS_SECONDS;
@@ -188,8 +199,11 @@ module marketplace::options_exchange_tests {
         assert!(options_exchange::get_initial_margin(&quote) == 0, E_MARGIN_TOO_LOW);
     }
     
-    #[test]
-    fun test_single_short_put_pricing() {
+    #[test(framework = @aptos_framework)]
+    fun test_single_short_put_pricing(framework: signer) {
+        // Setup test environment
+        timestamp::set_time_has_started_for_testing(&framework);
+
         // Test basic short put position pricing
         let current_time = 1000000u64;
         let expiration = current_time + THIRTY_DAYS_SECONDS;
@@ -239,8 +253,11 @@ module marketplace::options_exchange_tests {
         assert!(options_exchange::get_maintenance_margin(&quote) > 0, E_MARGIN_TOO_LOW);
     }
     
-    #[test]
-    fun test_call_spread_pricing() {
+    #[test(framework = @aptos_framework)]
+    fun test_call_spread_pricing(framework: signer) {
+        // Setup test environment
+        timestamp::set_time_has_started_for_testing(&framework);
+
         // Test bull call spread (long lower strike, short higher strike)
         let current_time = 1000000u64;
         let expiration = current_time + THIRTY_DAYS_SECONDS;
@@ -302,8 +319,14 @@ module marketplace::options_exchange_tests {
         assert!(options_exchange::get_initial_margin(&quote) >= 0, E_MARGIN_TOO_LOW);
     }
     
-    #[test]
-    fun test_straddle_pricing() {
+    #[test(framework = @aptos_framework)]
+    fun test_straddle_pricing(framework: signer) {
+        // Setup test environment
+        timestamp::set_time_has_started_for_testing(&framework);
+
+        // Setup test environment
+        timestamp::set_time_has_started_for_testing(&framework);
+
         // Test long straddle (long call + long put at same strike)
         let current_time = 1000000u64;
         let expiration = current_time + THIRTY_DAYS_SECONDS;
@@ -362,9 +385,29 @@ module marketplace::options_exchange_tests {
         assert!(options_exchange::get_net_credit(&quote) == 0, E_QUOTE_MISMATCH);
         assert!(options_exchange::get_initial_margin(&quote) == 0, E_MARGIN_TOO_LOW); // Long positions don't require margin
     }
+
+    #[test(framework = @aptos_framework)]
+    fun test_get_days_to_expiration(framework: signer){
+        // Setup test environment
+        timestamp::set_time_has_started_for_testing(&framework);
+
+        let current_time = timestamp::now_seconds();
+        let seconds_per_day = 60 * 60 * 24;
+
+        let zero_days_to_expiration = options_exchange::get_days_to_expiration(current_time);
+        let one_day_to_expiration = options_exchange::get_days_to_expiration(current_time + seconds_per_day);
+        let twelve_hours_to_expiration = options_exchange::get_days_to_expiration(current_time + (seconds_per_day/2));
+        
+        assert!(zero_days_to_expiration == 0, 1);
+        assert!(one_day_to_expiration == ONE_E18, 2);
+        assert!(twelve_hours_to_expiration == (ONE_E18/2), 3);
+    }
     
-    #[test]
-    fun test_short_straddle_pricing() {
+    #[test(framework = @aptos_framework)]
+    fun test_short_straddle_pricing(framework: signer) {
+        // Setup test environment
+        timestamp::set_time_has_started_for_testing(&framework);
+
         // Test short straddle (short call + short put at same strike)
         let current_time = 1000000u64;
         let expiration = current_time + THIRTY_DAYS_SECONDS;
