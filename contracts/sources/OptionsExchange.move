@@ -148,7 +148,13 @@ module options_exchange {
         // maintenance margin for the position
         maintenance_margin: u256,
         // the timestamp of the quote
-        timestamp: u64
+        timestamp: u64,
+        // the volatility used to generate the quote
+        volatility: u256,
+        // the underlying price use to generate the quote
+        underlying_price: u256,
+        // the risk free rate used in the calculation
+        risk_free_rate: u256
     }
 
     struct MarginAccount has store, drop, copy {
@@ -503,8 +509,13 @@ module options_exchange {
         user_address: address
     ) : vector<Position> acquires OptionsExchange {
         let exchange = borrow_global<OptionsExchange>(exchange_address);
-        let position_ids = *table::borrow(&exchange.user_position_lookup, user_address);
         let result = vector::empty<Position>();
+
+        if (!table::contains<address, vector<u64>>(&exchange.user_position_lookup, user_address)) {
+            result
+        }
+
+        let position_ids = *table::borrow(&exchange.user_position_lookup, user_address);
         
         vector::for_each(position_ids, |position_id| {
             let position = exchange.user_positions[position_id-1];
@@ -691,7 +702,10 @@ module options_exchange {
             net_credit: net_credit_u256,
             initial_margin: initial_margin_u256,
             maintenance_margin: maintenance_margin_u256,
-            timestamp: current_time_secs
+            timestamp: current_time_secs,
+            volatility: volatility_bps,
+            underlying_price: underlying_price,
+            risk_free_rate: risk_free_rate_bps
         }
     }
 
