@@ -104,6 +104,12 @@ module marketplace::options_exchange_tests {
         assert!(options_exchange::get_maintenance_margin(&quote) > 0, E_MARGIN_TOO_LOW);
         // Maintenance margin should be less than initial margin
         assert!(options_exchange::get_maintenance_margin(&quote) < options_exchange::get_initial_margin(&quote), E_MARGIN_TOO_LOW);
+
+        // ensure the price inputs are recorded on the base quote
+        assert!(options_exchange::get_volatility(&quote) == (20 * ONE_E18) / 100);
+        assert!(options_exchange::get_underlying_price(&quote) == 100 * ONE_E18);
+        assert!(options_exchange::get_risk_free_rate(&quote) == (5 * ONE_E18) / 100);
+
     }
     
     #[test]

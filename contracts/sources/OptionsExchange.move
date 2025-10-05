@@ -511,16 +511,14 @@ module options_exchange {
         let exchange = borrow_global<OptionsExchange>(exchange_address);
         let result = vector::empty<Position>();
 
-        if (!table::contains<address, vector<u64>>(&exchange.user_position_lookup, user_address)) {
-            result
-        }
-
-        let position_ids = *table::borrow(&exchange.user_position_lookup, user_address);
+        if (table::contains<address, vector<u64>>(&exchange.user_position_lookup, user_address)) {
+            let position_ids = *table::borrow(&exchange.user_position_lookup, user_address);
         
-        vector::for_each(position_ids, |position_id| {
-            let position = exchange.user_positions[position_id-1];
-            vector::push_back(&mut result, position);
-        });
+            vector::for_each(position_ids, |position_id| {
+                let position = exchange.user_positions[position_id-1];
+                vector::push_back(&mut result, position);
+            });
+        };
 
         result
     }
@@ -925,6 +923,9 @@ module options_exchange {
                 initial_margin: 0,  
                 maintenance_margin: 0,
                 timestamp: 0,
+                volatility: 0,
+                underlying_price: 0,
+                risk_free_rate: 0
             },
             closing_quote: Quote {
                 net_debit: 0,   
@@ -932,6 +933,9 @@ module options_exchange {
                 initial_margin: 0,  
                 maintenance_margin: 0,
                 timestamp: 0,
+                volatility: 0,
+                underlying_price: 0,
+                risk_free_rate: 0
             }
         }
     }
@@ -946,5 +950,8 @@ module options_exchange {
     public fun get_net_credit(quote: &Quote): u256 { quote.net_credit }
     public fun get_initial_margin(quote: &Quote): u256 { quote.initial_margin }
     public fun get_maintenance_margin(quote: &Quote): u256 { quote.maintenance_margin }
+    public fun get_volatility(quote: &Quote) : u256 { quote.volatility }
+    public fun get_underlying_price(quote: &Quote) : u256 { quote.underlying_price }
+    public fun get_risk_free_rate(quote: &Quote) : u256 { quote.risk_free_rate }
 }
 }
