@@ -22,13 +22,13 @@ const initPriceFeeds = async() => {
     }
 }
 
-export const getAssetPrice = async(symbol) => {
+const getPriceData = async(symbol) => {
     if(priceFeeds.length == 0){
         await initPriceFeeds();
     }
     
     const formattedSymbol = symbol.replace("-", "");
-    const feed = priceFeeds.find(x => { return x.generic_symbol == formattedSymbol})
+    const feed = priceFeeds.find(x => { return x.generic_symbol == formattedSymbol || x.symbol == symbol})
     
     if(!feed)
         throw `feed item not found for symbol ${symbol}`
@@ -38,15 +38,27 @@ export const getAssetPrice = async(symbol) => {
     try {
         const response = await fetch(url);
         const data = await response.json();
-        const priceData = data.parsed[0].price;
-        const price = priceData.price;
-        const exponent = Math.abs(priceData.expo);
-        const priceAsFloat = parseDecimals(price, exponent);
 
-        return priceAsFloat;
-    } catch (error) {
-        console.error('Failed to fetch price:', error);
+        return data;
+    } catch(err) {
+        console.error('Failed to fetch price:', err);
 
-        throw error;
+        throw err;
     }
+}
+
+export const getPriceUpdate = async(symbol) => {
+    const data = await getPriceData(symbol);
+    
+    return data.binary.data;
+}
+
+export const getAssetPrice = async(symbol) => {
+    const data = await getPriceData(symbol);
+    const priceData = data.parsed[0].price;
+    const price = priceData.price;
+    const exponent = Math.abs(priceData.expo);
+    const priceAsFloat = parseDecimals(price, exponent);
+
+    return priceAsFloat;
 }

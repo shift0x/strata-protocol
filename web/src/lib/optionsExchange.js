@@ -1,5 +1,7 @@
 import { addresses } from "./addresses";
 import aptos from "./chain";
+import { getAssetPrice } from "./oracle";
+import { getPriceUpdate } from "./pyth";
 import { formatDecimals } from "./utils";
 
 export const openOptionPosition = async (
@@ -10,6 +12,9 @@ export const openOptionPosition = async (
     leg_option_strike_prices,   // list of all option strike prices for each leg in the position,
     leg_option_expirations,     // list of all option expirations for each leg in the position (timestamp seconds)
 ) => {
+    const underlyingPriceUpdate = await getPriceUpdate(asset_symbol);
+    const riskFreeRatePriceUpdate = await getPriceUpdate("Rates.US10Y");
+
     const leg_option_amounts_big = leg_option_amounts.map(amount => {
         // amounts are 18 decimals
         return formatDecimals(amount, 18);
@@ -20,12 +25,12 @@ export const openOptionPosition = async (
         return formatDecimals(strike_price, 18);
     });
 
-    console.log({leg_option_expirations})
-
     const transaction = {
         data : {
-            function: `${addresses.code}::options_exchange::open_position`,
+            function: `${addresses.code}::options_exchange::update_price_feed_and_open_position`,
             functionArguments: [
+                underlyingPriceUpdate,
+                riskFreeRatePriceUpdate,
                 addresses.marketplace, 
                 addresses.options_exchange, 
                 asset_symbol,
