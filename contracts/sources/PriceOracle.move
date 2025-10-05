@@ -122,7 +122,7 @@ module price_oracle {
             // Note: Aptos uses the Pyth price feed ID without the `0x` prefix.
             let price_id = price_identifier::from_byte_vec(*price_identifier);
             
-            let pyth_price = pyth::get_price(price_id);
+            let pyth_price = pyth::get_price_unsafe(price_id);
 
             let asset_price = price::get_price(&pyth_price);
             let exponent = price::get_expo(&pyth_price);

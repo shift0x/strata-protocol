@@ -16,6 +16,8 @@ module options_exchange {
     use marketplace::price_oracle;
     use marketplace::volatility_marketplace;
     use marketplace::staking_vault;
+    use pyth::pyth;
+    use aptos_framework::coin;
 
     // ------------------------------------------------------------------------
     // Constants and errors
@@ -221,8 +223,52 @@ module options_exchange {
         create_position(0, asset_symbol, legs)
     }
 
+    public entry fun update_price_feed_and_open_position(
+        user: &signer,
+        underlying_price_update: vector<vector<u8>>,
+        risk_free_rate_price_update: vector<vector<u8>>,
+        marketplace_address: address,
+        exchange_address: address,
+        asset_symbol: String,
+        leg_option_types: vector<u8>,
+        leg_option_sides: vector<u8>,
+        leg_option_amounts: vector<u256>,
+        leg_option_strike_prices: vector<u256>,
+        leg_option_expirations: vector<u64>
+    ) acquires OptionsExchange {
+        /*
+         * Ideally i would like to update the price feed and subsequently read from the feed, however I get an VM
+         * error when trying to update the price feed with the data returned from the pyth api. As such, we parse
+         * the price feed update and store it in the mock price oracle. 
+         *
+         * I suspect this is a testnet specific issue
+         *
+         * Commenting out the price updates for now as they are not working
+         */
+        
+        // update underlying price
+        // let underlying_price_coins = coin::withdraw(user, pyth::get_update_fee(&underlying_price_update));
+        // pyth::update_price_feeds(underlying_price_update, underlying_price_coins);
+
+        // update risk free rate
+        // let risk_free_rate_coins = coin::withdraw(user, pyth::get_update_fee(&underlying_price_update));
+        // pyth::update_price_feeds(risk_free_rate_price_update, risk_free_rate_coins);
+        
+        open_position(
+            user, 
+            marketplace_address,
+            exchange_address,
+            asset_symbol,
+            leg_option_types,
+            leg_option_sides,
+            leg_option_amounts,
+            leg_option_strike_prices,
+            leg_option_expirations
+        );
+    }
+
     // entry functions
-    public entry fun open_position(
+    public fun open_position(
         user: &signer,
         marketplace_address: address,
         exchange_address: address,

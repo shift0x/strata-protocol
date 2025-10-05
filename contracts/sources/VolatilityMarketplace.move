@@ -390,7 +390,7 @@ module volatility_marketplace {
         while (i < num_markets) {
             let market_address = *vector::borrow(markets_vector, i);
             // need to upcase from 10^6 -> 10^18
-            let market_quote = (implied_volatility_market::get_quote(market_address) as u256) * ONE_E12; 
+            let market_quote = ((implied_volatility_market::get_quote(market_address) as u256) * ONE_E12) / 100; 
             total_quote = total_quote + market_quote;
             i = i + 1;
         };

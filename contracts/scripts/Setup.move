@@ -102,6 +102,5 @@ script {
             marketplace_address
         );
 
-
     }
 }
