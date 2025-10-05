@@ -246,6 +246,7 @@ function OptionsPage() {
       const leg_option_expirations = legs.map(leg => {
         // Convert days to timestamp (current time + days * 24 * 60 * 60)
         const daysInSeconds = parseInt(leg.expirationDays) * 24 * 60 * 60;
+
         return Math.floor(Date.now() / 1000) + daysInSeconds;
       });
 

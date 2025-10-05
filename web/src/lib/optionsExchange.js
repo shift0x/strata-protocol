@@ -1,5 +1,6 @@
 import { addresses } from "./addresses";
 import aptos from "./chain";
+import { formatDecimals } from "./utils";
 
 export const openOptionPosition = async (
     asset_symbol,               // the symbol for the position
@@ -10,12 +11,16 @@ export const openOptionPosition = async (
     leg_option_expirations,     // list of all option expirations for each leg in the position (timestamp seconds)
 ) => {
     const leg_option_amounts_big = leg_option_amounts.map(amount => {
-        return (amount * Math.pow(10, 6)).toString();
+        // amounts are 18 decimals
+        return formatDecimals(amount, 18);
     });
 
     const leg_option_strike_prices_big = leg_option_strike_prices.map(strike_price => {
-        return (strike_price * Math.pow(10, 6)).toString();
+        // strike prices are 18 decimals
+        return formatDecimals(strike_price, 18);
     });
+
+    console.log({leg_option_expirations})
 
     const transaction = {
         data : {
