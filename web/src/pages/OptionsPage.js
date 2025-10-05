@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { formatCurrency, isValidCurrencyAmount, parseCurrency } from '../lib/currency';
-import { openOptionPosition, getUserPositions } from '../lib/optionsExchange';
+import { openOptionPosition, getUserPositions, closeOptionPosition } from '../lib/optionsExchange';
 import { getAssetPrice } from '../lib/pyth';
 import './OptionsPage.css';
 
@@ -56,8 +56,7 @@ function OptionsPage() {
     fetchPrices();
   }, []);
 
-  // Clear option legs when asset changes
-  useEffect(() => {
+  const clearLegs = () => {
     setLegs([{
       id: 1,
       optionType: 'call',
@@ -68,7 +67,13 @@ function OptionsPage() {
       isValidStrike: true,
       side: 'buy'
     }]);
+  }
+  // Clear option legs when asset changes
+  useEffect(() => {
+    clearLegs()
   }, [selectedAsset]);
+
+  const [userPositions, setUserPositions] = useState([]);
 
   // Fetch user positions when connected user changes
   useEffect(() => {
@@ -77,6 +82,7 @@ function OptionsPage() {
         try {
           const accountAddress = account.address.bcsToHex().toString();
           const positions = await getUserPositions(accountAddress);
+          setUserPositions(positions);
           console.log('User positions:', positions);
         } catch (error) {
           console.error('Error fetching user positions:', error);
@@ -86,34 +92,6 @@ function OptionsPage() {
 
     fetchUserPositions();
   }, [connected, account?.address]);
-  
-  // Mock positions data
-  const [userPositions] = useState([
-    {
-      id: '1',
-      asset: 'BTC',
-      type: 'call',
-      strike: 70000,
-      expiration: '2025-10-10',
-      premium: 1250,
-      collateral: 5000,
-      currentValue: 1420,
-      pnl: 170,
-      pnlPercent: 13.6
-    },
-    {
-      id: '2', 
-      asset: 'ETH',
-      type: 'put',
-      strike: 3500,
-      expiration: '2025-10-17',
-      premium: 850,
-      collateral: 3500,
-      currentValue: 720,
-      pnl: -130,
-      pnlPercent: -15.3
-    }
-  ]);
 
   // Add a new leg to the strategy
   const addLeg = () => {
@@ -211,15 +189,27 @@ function OptionsPage() {
     updateLeg(legId, 'isValidStrike', true);
   };
 
-  // Strategy calculation placeholder - will be replaced with library
-  const strategyCalculation = {
-    netPremium: 0,
-    totalAmount: 0,
-    maxProfit: 'TBD',
-    maxLoss: 0
+  // Handle closing position
+  const handleClosePosition = async (positionId) => {
+    try {
+      const transaction = await closeOptionPosition(positionId);
+      const response = await signAndSubmitTransaction(transaction);
+      
+      alert(`Position closed successfully! Transaction hash: ${response.hash}`);
+      
+      // Refresh positions
+      if (connected && account?.address) {
+        const accountAddress = account.address.bcsToHex().toString();
+        const positions = await getUserPositions(accountAddress);
+        setUserPositions(positions);
+        clearLegs();
+      }
+      
+    } catch (error) {
+      console.error('Error closing position:', error);
+      alert('Error closing position. Please try again.');
+    }
   };
-
-
 
   // Handle creating position
   const handleCreatePosition = async () => {
@@ -265,6 +255,14 @@ function OptionsPage() {
       
       alert(`Position created successfully! Transaction hash: ${response.hash}`);
       
+      // Refresh positions
+      if (connected && account?.address) {
+        const accountAddress = account.address.bcsToHex().toString();
+        const positions = await getUserPositions(accountAddress);
+        setUserPositions(positions);
+        clearLegs();
+      }
+      
     } catch (error) {
       console.error('Error creating position:', error);
       alert('Error creating position. Please try again.');
@@ -278,7 +276,7 @@ function OptionsPage() {
       <div className="options-page-container">
         {/* Header */}
         <div className="page-header-section">
-          <h1 className="page-header">Options Trading [Contracts completed, wire up in progress]</h1>
+          <h1 className="page-header">Options Trading</h1>
           <p className="hero-subtitle wide">
             Create and trade multi-leg option positions. Build spreads, straddles, and custom combinations. 
             Options are priced using an on-chain Binomial Option Pricing Model that uses Pyth oracles for underlying asset price data and
@@ -477,33 +475,6 @@ function OptionsPage() {
               ))}
             </div>
 
-            {/* Strategy Summary */}
-            <div className="strategy-summary">
-              <div className="summary-header">
-                <h4>Strategy Summary</h4>
-              </div>
-              <div className="detail-row">
-                <span>Net Premium</span>
-                <span className="detail-value">
-                  $0.00
-                </span>
-              </div>
-              <div className="detail-row">
-                <span>Total Amount</span>
-                <span className="detail-value">$0</span>
-              </div>
-              <div className="detail-row">
-                <span>Max Profit</span>
-                <span className="detail-value">
-                  TBD
-                </span>
-              </div>
-              <div className="detail-row">
-                <span>Max Loss</span>
-                <span className="detail-value">$0.00</span>
-              </div>
-            </div>
-
             {/* Create Button */}
             <button 
               className="create-option-btn"
@@ -532,37 +503,93 @@ function OptionsPage() {
                     <div key={position.id} className="position-card">
                       <div className="position-header">
                         <div className="position-asset">
-                          <span className={`position-type ${position.type}`}>
-                            {position.type.toUpperCase()}
-                          </span>
-                          <span className="position-symbol">{position.asset}</span>
+                          <span className="position-symbol">{position.symbol}</span>
+                          <span className="position-id">#{position.id}</span>
                         </div>
-                        <div className={`position-pnl ${position.pnl >= 0 ? 'positive' : 'negative'}`}>
-                          {position.pnl >= 0 ? '+' : ''}${position.pnl}
-                          <span className="pnl-percent">
-                            ({position.pnl >= 0 ? '+' : ''}{position.pnlPercent}%)
-                          </span>
+                        <div className={`position-status ${position.status.toLowerCase()}`}>
+                          {position.status}
                         </div>
                       </div>
                       
-                      <div className="position-details">
-                        <div className="position-row">
-                          <span>Strike:</span>
-                          <span>${position.strike.toLocaleString()}</span>
+                      <div className="position-legs">
+                        <div className="legs-header">
+                          <span>Legs ({position.legs.length})</span>
                         </div>
-                        <div className="position-row">
-                          <span>Expires:</span>
-                          <span>{new Date(position.expiration).toLocaleDateString()}</span>
+                        {position.legs.map((leg, index) => (
+                          <div key={index} className="leg-item">
+                            <div className="leg-summary">
+                              <span className={`leg-side ${leg.side.toLowerCase()}`}>
+                                {leg.side} 
+                              </span>
+                              <span className={`leg-type ${leg.type.toLowerCase()}`}>
+                                {leg.type}
+                              </span>
+                              <span className="leg-amount">
+                                {leg.amount} contracts
+                              </span>
+                            </div>
+                            <div className="leg-details">
+                              <div className="leg-detail-row">
+                                <span>Strike:</span>
+                                <span>${leg.strikePrice.toLocaleString()}</span>
+                              </div>
+                              <div className="leg-detail-row">
+                                <span>Expires:</span>
+                                <span>{leg.expiration.toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="position-pricing">
+                        <div className="pricing-section">
+                          <h5>Opening Quote</h5>
+                          <div className="quote-details">
+                            <div className="quote-row">
+                              <span>Net Debit:</span>
+                              <span>${position.openingQuote.netDebit.toLocaleString()}</span>
+                            </div>
+                            <div className="quote-row">
+                              <span>Underlying Price:</span>
+                              <span>${position.openingQuote.underlyingPrice.toLocaleString()}</span>
+                            </div>
+                            <div className="quote-row">
+                              <span>Volatility:</span>
+                              <span>{(position.openingQuote.volatility * 100).toFixed(1)}%</span>
+                            </div>
+                            <div className="quote-row">
+                              <span>Date:</span>
+                              <span>{position.openingQuote.timestamp.toLocaleDateString()}</span>
+                            </div>
+                          </div>
                         </div>
-                        <div className="position-row">
-                          <span>Premium:</span>
-                          <span>${position.premium}</span>
-                        </div>
+
+                        {position.closingQuote.timestamp.getTime() > 0 && (
+                          <div className="pricing-section">
+                            <h5>Closing Quote</h5>
+                            <div className="quote-details">
+                              <div className="quote-row">
+                                <span>Net Credit:</span>
+                                <span>${position.closingQuote.netCredit.toLocaleString()}</span>
+                              </div>
+                              <div className="quote-row">
+                                <span>Date:</span>
+                                <span>{position.closingQuote.timestamp.toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                       
-                      <button className="close-position-btn">
-                        Close Position
-                      </button>
+                      {position.status === 'OPEN' && (
+                        <button 
+                          className="close-position-btn"
+                          onClick={() => handleClosePosition(position.id)}
+                        >
+                          Close Position
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>

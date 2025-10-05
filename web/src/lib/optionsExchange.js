@@ -1,8 +1,7 @@
 import { addresses } from "./addresses";
 import aptos from "./chain";
-import { getAssetPrice } from "./oracle";
 import { getPriceUpdate } from "./pyth";
-import { formatDecimals } from "./utils";
+import { formatDecimals, parseDecimals } from "./utils";
 
 export const openOptionPosition = async (
     asset_symbol,               // the symbol for the position
@@ -14,11 +13,6 @@ export const openOptionPosition = async (
 ) => {
     const underlyingPriceUpdate = await getPriceUpdate(asset_symbol);
     const riskFreeRatePriceUpdate = await getPriceUpdate("Rates.US10Y");
-
-    console.log({
-        underlyingPriceUpdate,
-        riskFreeRatePriceUpdate
-    })
 
     const leg_option_amounts_big = leg_option_amounts.map(amount => {
         // amounts are 18 decimals
@@ -81,11 +75,48 @@ export const getUserPositions = async(
         ],
     }
 
-    console.log({request})
-
     const result = await aptos.view({ payload: request });
+    const positions = result[0].map(position => {
+        const id = position.id;
+        const symbol = position.asset_symbol;
+        const closingQuote = formatQuote(position.closing_quote);
+        const openingQuote = formatQuote(position.opening_quote);
+        const status = position.status["__variant__"];
+        const legs = position.legs.map(leg => { return formatLeg(leg)});
 
-    console.log(result);
+        return {
+            id,
+            symbol,
+            closingQuote,
+            openingQuote,
+            status,
+            legs
+        }
+    });
 
-    return result[0];
+    return positions;
+ 
+}
+
+const formatLeg = (leg) => {
+    return {
+        amount: parseDecimals(leg.amount, 18),
+        expiration: new Date(Number(leg.expiration)*1000),
+        type: leg.option_type["__variant__"],
+        side: leg.side["__variant__"],
+        strikePrice: parseDecimals(leg.strike_price, 18)
+    }
+}
+
+const formatQuote = (quote) => {
+    return {
+        initialMargin: parseDecimals(quote.initial_margin, 18),
+        maintenanceMargin: parseDecimals(quote.maintenance_margin, 18),
+        netCredit: parseDecimals(quote.net_credit, 18),
+        netDebit:parseDecimals(quote.net_debit, 18),
+        riskFreeRate: parseDecimals(quote.risk_free_rate, 18),
+        timestamp: new Date(Number(quote.timestamp) * 1000),
+        underlyingPrice: parseDecimals(quote.underlying_price, 18),
+        volatility: parseDecimals(quote.volatility, 18)
+    }
 }
