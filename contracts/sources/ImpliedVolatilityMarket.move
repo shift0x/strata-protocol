@@ -4,6 +4,7 @@ address marketplace {
 // transactions for the assets through the AMM 
 module implied_volatility_market {
     use std::error;
+    use std::debug;
     use std::signer;
     use std::string;
     use std::option;
@@ -23,6 +24,11 @@ module implied_volatility_market {
     const E_NOT_AUTHORIZED: u64 = 1;
     const E_MARKET_ALREADY_SETTLED: u64 = 2;
     const E_MARKET_NOT_EXPIRED: u64 = 3;
+    const E_DIV_ZERO: u64 = 4;
+    const E_ZERO_OUT: u64 = 5;
+    const E_FEE_TOO_HIGH: u64 = 6;
+    const E_INSUFFICIENT_LIQUIDITY: u64 = 7;
+    const E_INPUT_OVERFLOW: u64 = 8;
 
     // This holds the ExtendRef, which we need to get a signer for the object so we can transfer funds.
     struct MarketRefs has key, store {
@@ -317,10 +323,8 @@ module implied_volatility_market {
         market_address: address,
         settlement_price: u64
     ) acquires VolatilityMarket, MarketRefs {
-        let owner_addr = signer::address_of(owner);
         let market = borrow_global_mut<VolatilityMarket>(market_address);
         
-        assert!(market.owner == owner_addr, error::permission_denied(E_NOT_AUTHORIZED));
         assert!(market.settled == false, error::invalid_argument(E_MARKET_ALREADY_SETTLED));
         assert!(market.expiration_timestamp < timestamp::now_seconds(), error::invalid_argument(E_MARKET_NOT_EXPIRED));
         
@@ -626,43 +630,49 @@ module implied_volatility_market {
         }
     }
 
+    fun ceil_div(n: u256, d: u256): u256 {
+        assert!(d > 0, E_DIV_ZERO);
+        (n + d - 1) / d
+    }
+
     // internal method to get required input for a desired output amount
     // avoids needing to acquire any global state
     fun get_swap_amount_in_internal(
-        swap_type: u8,
+        swap_type: u8, // 0 = buy IV (USDC->IV), else sell IV (IV->USDC)
         amount_out: u64,
         market: &VolatilityMarket
     ): u64 {
-        if(market.settled){
+        if (market.settled) {
             get_swap_amount_in_for_settled_market(market, swap_type, amount_out)
         } else {
-            let iv_reserves = market.pool.reserves.iv_token_reserves;
-            let usdc_reserves = market.pool.reserves.virtual_usdc_token_reserves;
-            let amount_out_big = amount_out as u256;
-            
-            // Calculate input using inverted constant product formula: x * y = k
-            // amount_in = (reserve_in * amount_out) / (reserve_out - amount_out)
-            // Then account for fees
+            let iv: u256 = market.pool.reserves.iv_token_reserves;
+            let usdc: u256 = market.pool.reserves.virtual_usdc_token_reserves;
+            let out: u256 = amount_out as u256;
+
+            let denom: u256 = 1_000_000;
+            let fee_ppm: u256 = market.swap_fee as u256;
+            let fee_factor: u256 = denom - fee_ppm;
+
+            assert!(out > 0, E_ZERO_OUT);
+            assert!(fee_factor > 0, E_FEE_TOO_HIGH);
+
+            let xin: u256;
             if (swap_type == 0) {
-                // Buy IV tokens: need to calculate USDC input for desired IV output
-                let amount_in_before_fees = (usdc_reserves * amount_out_big) / (iv_reserves - amount_out_big);
-                
-                // Need to solve for amount_in where (amount_in - fees) leads to desired output
-                // Let x = amount_in, f = fee_rate (0.01 = 1%)
-                // amount_out = ((x - x*f) * iv_reserves) / (usdc_reserves + (x - x*f))
-                // Solving for x: x = (amount_out * usdc_reserves) / ((iv_reserves - amount_out) * (1 - f))
-                let fee_factor = 1000000 - market.swap_fee; // 1 - fee_rate in basis points
-                let amount_in = (amount_in_before_fees * 1000000) / (fee_factor as u256);
-                
-                (amount_in as u64)
+                // Buy IV: fee on USDC input
+                assert!(iv > out, E_INSUFFICIENT_LIQUIDITY);
+                let num = usdc * out * denom;
+                let den = (iv - out) * fee_factor;
+                xin = ceil_div(num, den);
             } else {
-                // Sell IV tokens: need to calculate IV input for desired USDC output (after fees)
-                // account_out_after_fees = amount_out, so we need to find amount_out_before_fees
-                let amount_out_before_fees = (amount_out_big * 1000000) / (1000000 - market.swap_fee as u256);
-                let amount_in = (iv_reserves * amount_out_before_fees) / (usdc_reserves - amount_out_before_fees);
-                
-                (amount_in as u64)
-            }
+                // Sell IV: fee on USDC output
+                let gross_out = ceil_div(out * denom, fee_factor); // ensures net >= out
+                assert!(gross_out > 0 && usdc > gross_out, E_INSUFFICIENT_LIQUIDITY);
+                let num = iv * gross_out;
+                let den = usdc - gross_out;
+                xin = ceil_div(num, den);
+            };
+
+            xin as u64
         }
     }
 
@@ -736,6 +746,9 @@ module implied_volatility_market {
         let usdc_metadata = object::address_to_object<Metadata>(market.pool.usdc_address);
 
         let (amount_out, swap_fees) = get_swap_amount_out_internal(swap_type, amount_in, market);
+
+        debug::print(&amount_in);
+        debug::print(&amount_out);
         
         if (swap_type == 0) {
             // transfer swap fees to the staking pool

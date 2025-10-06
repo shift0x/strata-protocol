@@ -15,14 +15,19 @@ module volatility_marketplace {
     use aptos_framework::event;
     use marketplace::implied_volatility_market::{Self};
     use marketplace::staking_vault::{Self};
+    use marketplace::price_oracle::{Self};
+    use marketplace::historical_volatility_calculator::{Self};
 
     // Error codes
     const E_NOT_AUTHORIZED: u64 = 1;
     const E_MARKET_NOT_FOUND: u64 = 2;
     const E_MARKET_ALREADY_EXISTS: u64 = 3;
     const E_INVALID_EXPIRATION: u64 = 4;
+    const E_PRICE_SNAPSHOT_TOO_SOON: u64 = 5;
 
     const ONE_E12: u256 = 1000000000000; // 1e6 scaling factor
+    const ONE_E18: u256 = 1000000000000000000;
+    const ONE_DAY: u64 = 60*60*24;
 
     // Events
     #[event]
@@ -84,6 +89,12 @@ module volatility_marketplace {
         iv_token_address: address,
     }
 
+    // Price snapshots of on chain prices
+    struct PriceSnapshot has drop, store {
+        timestamp: u64,
+        price: u256,
+    }
+
     // Centralized marketplace resource
     struct Marketplace has key {
         // Owner of the marketplace
@@ -104,6 +115,8 @@ module volatility_marketplace {
         staking_vault_address: address,
         // The address of usdc token
         usdc_address: address,
+        // Lookup of price history records for open markets
+        price_history: Table<string::String, vector<PriceSnapshot>>,
     }
 
     // entry functions
@@ -127,6 +140,66 @@ module volatility_marketplace {
             amount,
             marketplace_address,
         });
+    }
+
+    public entry fun create_price_snapshots_for_active_markets(
+        sender: &signer,
+        marketplace_address: address,
+        oracle_address: address,
+    ) acquires Marketplace {
+        let marketplace = borrow_global_mut<Marketplace>(marketplace_address);
+        
+        // Initialize price history for supported assets if they don't exist
+        let supported_assets = vector[
+            string::utf8(b"ETH-USD"),
+            string::utf8(b"BTC-USD"),
+            string::utf8(b"APT-USD")
+        ];
+        
+        let i = 0;
+        let num_assets = vector::length(&supported_assets);
+        
+        while (i < num_assets) {
+            let asset_symbol = *vector::borrow(&supported_assets, i);
+            
+            // Initialize price history for this asset if it doesn't exist
+            if (!table::contains(&marketplace.price_history, asset_symbol)) {
+                table::add(&mut marketplace.price_history, asset_symbol, vector::empty<PriceSnapshot>());
+            };
+            
+            // Create snapshot for this asset
+            create_snapshot(marketplace, oracle_address, asset_symbol);
+            
+            i = i + 1;
+        };
+    }
+
+    // Create a price snapshot for the given asset. Checks to ensure the snapshot is at least one day from the last
+    public fun create_snapshot(
+        marketplace: &mut Marketplace,
+        oracle_address: address,
+        symbol: string::String
+    ) {
+        let price_history = table::borrow_mut(&mut marketplace.price_history, symbol);
+        let snapshot_count = vector::length(price_history);
+
+        // ensure the last snapshot is at least one day from the last
+        if(snapshot_count > 0) {
+            let last_snapshot = price_history[0].timestamp;
+            let current_time = timestamp::now_seconds();
+            let time_since_last_snapshot = current_time - last_snapshot;
+
+            assert!(time_since_last_snapshot >= ONE_DAY, error::invalid_argument(E_PRICE_SNAPSHOT_TOO_SOON));         
+        };
+
+        // create a new price snapshot
+        let new_snapshot = PriceSnapshot {
+            timestamp: timestamp::now_seconds(),
+            price: price_oracle::get_price(oracle_address, symbol),
+        };
+
+        // push the price update to the front of the vector
+        vector::insert(price_history, 0, new_snapshot);
     }
 
     // Helper function to convert u64 to decimal string
@@ -175,7 +248,8 @@ module volatility_marketplace {
             test_usdc_refs,
             test_usdc_metadata,
             staking_vault_address: vault_address,
-            usdc_address
+            usdc_address,
+            price_history: table::new(),
         };
 
         // Store resources
@@ -286,8 +360,8 @@ module volatility_marketplace {
         (market_id, market_address)
     }
 
-    // Settle the given market at the given historical volatility price
-    public fun settle_market(
+    #[test_only]
+    public fun settle_market_test(
         owner: &signer,
         marketplace_address: address,
         market_id: u64,
@@ -296,10 +370,22 @@ module volatility_marketplace {
         let settler_addr = signer::address_of(owner);
         let marketplace = borrow_global_mut<Marketplace>(marketplace_address);
         let market_address = *table::borrow(&marketplace.market_addresses, market_id);
-        
-        // Get asset symbol before settling
+
         let asset_symbol = implied_volatility_market::get_asset_symbol(market_address);
         
+        settle_market_with_price(owner, marketplace, asset_symbol, market_address, market_id, settlement_price);
+    }
+
+    fun settle_market_with_price(
+        owner: &signer,
+        marketplace: &mut Marketplace,
+        asset_symbol: string::String,
+        market_address: address,
+        market_id: u64,
+        settlement_price: u64
+    ) {
+        let settler_addr = signer::address_of(owner);
+
         implied_volatility_market::settle_market(owner, market_address, settlement_price);
 
         // remove the market from active markets by asset
@@ -318,6 +404,26 @@ module volatility_marketplace {
             settlement_price,
             settler: settler_addr,
         });
+    }
+
+    // Settle the given market at the given historical volatility price
+    public fun settle_market(
+        owner: &signer,
+        marketplace_address: address,
+        market_id: u64
+    ) acquires Marketplace {
+        let marketplace = borrow_global_mut<Marketplace>(marketplace_address);
+        let market_address = *table::borrow(&marketplace.market_addresses, market_id);
+
+        // compute the historical volatility
+        let asset_symbol = implied_volatility_market::get_asset_symbol(market_address);
+        let observed_prices = get_price_snapshots(marketplace, asset_symbol, 30);
+        let historical_volatility = historical_volatility_calculator::calculate_historical_volatility(observed_prices, 365);
+        
+        // settle the market at the observed historical volatility for the period
+        let settlement_price = (historical_volatility / ONE_E18) as u64;
+        
+        settle_market_with_price(owner, marketplace, asset_symbol, market_address , market_id, settlement_price);
     }
 
 
@@ -343,6 +449,27 @@ module volatility_marketplace {
         });
     }
 
+    fun get_price_snapshots(
+        marketplace: &Marketplace,
+        asset_symbol: string::String,
+        count: u64
+    ): vector<u256> {
+        let price_history = table::borrow(&marketplace.price_history, asset_symbol);
+        let snapshot_count = vector::length(price_history);
+        let snapshots = vector::empty<u256>();
+
+        let max_count = if(snapshot_count < count) {
+            snapshot_count
+        } else {
+            count
+        };
+        
+        for(i in 0..max_count) {
+            vector::push_back(&mut snapshots, price_history[i].price);
+        };
+        
+        snapshots
+    }
 
 
     #[view]

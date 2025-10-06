@@ -277,40 +277,10 @@ module marketplace::implied_volatility_market_test {
 
         // Settle the market at a specific price
         let settlement_price = 20 * 1000000; // 20 USDC per IV token
-        volatility_marketplace::settle_market(&creator, marketplace_addr, market_id, settlement_price);
+        volatility_marketplace::settle_market_test(&creator, marketplace_addr, market_id, settlement_price);
 
         // Verify market is now settled
         assert!(implied_volatility_market::is_settled(market_address), 2);
-    }
-
-    #[test(creator = @0x123, trader = @0x456, staker = @0x789, framework = @aptos_framework)]
-    #[expected_failure(abort_code = 0x50001, location = marketplace::implied_volatility_market)]
-    fun test_settlement_unauthorized(creator: signer, trader: signer, staker: signer, framework: signer) {
-        // Setup test environment
-        timestamp::set_time_has_started_for_testing(&framework);
-
-        // Create marketplace
-        let marketplace_addr = volatility_marketplace::create_marketplace(&creator);
-
-        // Create a volatility market
-        let asset_symbol = string::utf8(b"BTC");
-        let initial_volatility = 25 * 1000000; 
-        let expiration_timestamp = timestamp::now_seconds() + 86400;
-        
-        let (market_id, market_address) = volatility_marketplace::create_market(
-            &creator,
-            asset_symbol,
-            initial_volatility,
-            expiration_timestamp,
-            marketplace_addr
-        );
-
-        // Fast-forward past expiration
-        timestamp::fast_forward_seconds(86401);
-
-        // Try to settle with unauthorized signer (trader instead of creator)
-        let settlement_price = 20 * 1000000;
-        volatility_marketplace::settle_market(&trader, marketplace_addr, market_id, settlement_price);
     }
 
     #[test(creator = @0x123, framework = @aptos_framework)]
@@ -337,7 +307,7 @@ module marketplace::implied_volatility_market_test {
 
         // Try to settle before expiration (should fail)
         let settlement_price = 20 * 1000000;
-        volatility_marketplace::settle_market(&creator, marketplace_addr, market_id, settlement_price);
+        volatility_marketplace::settle_market_test(&creator, marketplace_addr, market_id, settlement_price);
     }
 
     #[test(creator = @0x123, framework = @aptos_framework)]
@@ -367,10 +337,10 @@ module marketplace::implied_volatility_market_test {
 
         // Settle the market once
         let settlement_price = 20 * 1000000;
-        volatility_marketplace::settle_market(&creator, marketplace_addr, market_id, settlement_price);
+        volatility_marketplace::settle_market_test(&creator, marketplace_addr, market_id, settlement_price);
 
         // Try to settle again (should fail)
-        volatility_marketplace::settle_market(&creator, marketplace_addr, market_id, settlement_price);
+        volatility_marketplace::settle_market_test(&creator, marketplace_addr, market_id, settlement_price);
     }
 
     #[test(creator = @0x123, trader = @0x456, staker = @0x789, framework = @aptos_framework)]
@@ -422,7 +392,7 @@ module marketplace::implied_volatility_market_test {
         // Fast-forward past expiration and settle
         timestamp::fast_forward_seconds(86401);
         let settlement_price = 30 * 1000000; // 30 USDC per IV token (profit for long)
-        volatility_marketplace::settle_market(&creator, marketplace_addr, market_id, settlement_price);
+        volatility_marketplace::settle_market_test(&creator, marketplace_addr, market_id, settlement_price);
 
         // Verify IV tokens were sold back and trader received USDC
         let iv_balance_after_settlement = primary_fungible_store::balance(trader_addr, iv_metadata);
@@ -488,7 +458,7 @@ module marketplace::implied_volatility_market_test {
         // Fast-forward past expiration and settle at lower price (profit for short)
         timestamp::fast_forward_seconds(86401);
         let settlement_price = 20 * 1000000; // 20 USDC per IV token
-        volatility_marketplace::settle_market(&creator, marketplace_addr, market_id, settlement_price);
+        volatility_marketplace::settle_market_test(&creator, marketplace_addr, market_id, settlement_price);
 
         // Verify short position was closed and trader received remaining collateral
         let usdc_balance_after = primary_fungible_store::balance(trader_addr, usdc_metadata);
@@ -554,7 +524,7 @@ module marketplace::implied_volatility_market_test {
         // Fast-forward and settle at price favorable to long positions
         timestamp::fast_forward_seconds(86401);
         let settlement_price = 35 * 1000000; // 35 USDC per IV token
-        volatility_marketplace::settle_market(&creator, marketplace_addr, market_id, settlement_price);
+        volatility_marketplace::settle_market_test(&creator, marketplace_addr, market_id, settlement_price);
 
         // Verify both positions were closed
         let trader1_usdc_after = primary_fungible_store::balance(trader1_addr, usdc_metadata);
