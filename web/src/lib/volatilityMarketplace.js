@@ -104,10 +104,10 @@ export const getAmountOut = async (market, amountIn) => {
     };
 }
 
-export const buildCloseLongPositionTransaction = async(userAddress, marketAddress, ivTokenAddress) => {
-    const ivTokenBalance = await getAddressTokenBalance(userAddress, ivTokenAddress);
-    
-    return buildSwapTransaction(marketAddress, 1, ivTokenBalance);
+export const buildCloseLongPositionTransaction = async(userAddress, marketAddress) => {
+    const { long } = await getUserPosition(marketAddress, userAddress);
+
+    return buildSwapTransaction(marketAddress, 1, long);
 }
 
 export const buildSwapTransaction = async (marketAddress, swapType, amountIn) => {
